@@ -4,6 +4,10 @@ import nimgl/[opengl, glfw], nimgl/imgui, nimgl/imgui/[impl_opengl, impl_glfw]
 import tinydialogs
 
 
+#TODO   Flatpak build?            Compile to C?
+
+
+
 when defined(windows):
   proc glfwGetWin32Window(window: GLFWWindow): pointer {.importc: "glfwGetWin32Window".}
 
@@ -21,10 +25,8 @@ when defined(windows):
       addr value,
       int32(sizeof(value))
     )
-    if result != 0:
-      echo "Failed to enable dark title bar (error code: ", result, ")"
-
-#TODO  Drag-n-drop for WADs. Custom icon. Flatpak build?            -Compile to C?
+    #if result != 0:
+      #echo "Failed to enable dark title bar (error code: ", result, ")"
 
 #let TargetFPS = 60.0
 let BackgroundFPS = 10.0
@@ -67,7 +69,7 @@ var img = GLFWImage(
   pixels: cast[ptr cuchar](RawIconData.cstring)
 )
 
-proc setBuffer(buf: var array[256, char], text: string) =
+proc setBuffer(buf: var array[256, char], text: string) =     #set igInputText text
   let len = min(text.len, 255)
   for i in 0 ..< len:
     buf[i] = text[i]
@@ -85,7 +87,7 @@ proc main() =
 
   glfwWindowHint(GLFWContextVersionMajor, 3)
   glfwWindowHint(GLFWContextVersionMinor, 3)
-  #glfwWindowHint(GLFWOpenglForwardCompat, GLFW_TRUE) #Seems like i don't need this without MacOS build?
+  #glfwWindowHint(GLFWOpenglForwardCompat, GLFW_TRUE)           #Seems like i don't need this without MacOS build?
   glfwWindowHint(GLFWOpenglProfile, GLFW_OPENGL_CORE_PROFILE)
   glfwWindowHint(GLFWResizable, GLFW_FALSE)
 
@@ -135,9 +137,8 @@ proc main() =
       let pathCString: cstring = paths[i]
       let path: string = $pathCString
 
-      echo "File dropped from OS: ", path
+      #echo "File dropped from OS: ", path
 
-      # Example logic: checking file extensions
       if ifExtensionCorrect(path):
         shouldAddDragWAD = true
         dragPath = path

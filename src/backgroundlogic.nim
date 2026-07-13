@@ -123,7 +123,7 @@ proc setArgs(portIndx: int, confIndx: int): seq[seq[string]] =
     var pwads = state.ports[portIndx].configs[confIndx].pwads
     #var commands = strutils.splitWhitespace(state.ports[portIndx].configs[confIndx].commands)
     var commands = state.ports[portIndx].configs[confIndx].commands.split(';', 1)
-    echo $commands & "commands"
+    #echo $commands & "commands"
     var portIwadBehav = state.ports[portIndx].iwadBehav
 
     if commands.len > 1:
@@ -146,7 +146,7 @@ proc setArgs(portIndx: int, confIndx: int): seq[seq[string]] =
       args.add(pwads[i])
 
     args.add(postCommands)
-    echo @[preCommands, args]
+    #echo @[preCommands, args]
     result = @[preCommands, args]
 
 proc runPort*(portIndx: int, confIndx: int) =
@@ -174,7 +174,7 @@ proc runPort*(portIndx: int, confIndx: int) =
         flatpakArgs.add($portExec)
         flatpakArgs.add(runArgs[1])
         let flatpakPath = findExe("flatpak")
-        echo $flatpakArgs
+        #echo $flatpakArgs
         let process = startProcess(
             command = flatpakPath,
             args = flatpakArgs,
@@ -249,7 +249,7 @@ proc loadConfig*(): ProgramState =
 
 
 configPath = getConfigDir() & appName
-echo configPath
+#echo configPath
 state = loadConfig()
 
 if state.defaultIWADDirectory.len <= 0 or state.defaultPWADDirectory.len <= 0:

@@ -674,9 +674,9 @@ proc setSelectedStyle*(indx: int = 0) =
   of 10:
     setupPaperAndInkStyle()
   else:
-    echo "lol"
+    discard
 
   makeResizeGripInvisible()
-  echo "Style is changed to " & $availStyles[indx]
+  #echo "Style is changed to " & $availStyles[indx]
 
 

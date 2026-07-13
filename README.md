@@ -19,7 +19,7 @@
 ### Credits
 - Developed by [muchobliged](https://github.com/muchobliged)
 - [NimGL](https://github.com/nimgl/nimgl) by [lmariscal](https://github.com/lmariscal)
-- [Nim tinydialogs](https://github.com/Patitotective/tinydialogs) by [Patitotective](https://github.com/Patitotective)
+- [tinydialogs](https://github.com/Patitotective/tinydialogs) by [Patitotective](https://github.com/Patitotective)
 
 ##
 

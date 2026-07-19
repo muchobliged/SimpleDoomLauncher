@@ -17,7 +17,7 @@
 
 ### Build
 - Install [nim](https://nim-lang.org/install.html)
-
+- Clone this repo into desired directory
 
 
 ### Linux:

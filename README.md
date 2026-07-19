@@ -12,6 +12,19 @@
 
 
 
+##
+
+
+### Build
+- Install [nim](https://nim-lang.org/install.html) (preferably using choosenim)
+
+
+
+### Linux:
+- Run buildLIN.sh, nimble should download all expected dependencies automatically
+
+### Windows:
+- WIP
 
 
 ##
@@ -20,6 +33,9 @@
 - Developed by [muchobliged](https://github.com/muchobliged)
 - [NimGL](https://github.com/nimgl/nimgl) by [lmariscal](https://github.com/lmariscal)
 - [tinydialogs](https://github.com/Patitotective/tinydialogs) by [Patitotective](https://github.com/Patitotective)
+
+
+
 
 ##
 

@@ -7,6 +7,7 @@ license       = "MIT"
 srcDir        = "src"
 backend       = "cpp"
 bin           = @["SimpleDoomLauncher"]
+binDir        = "build"
 
 # Dependencies
 

@@ -16,7 +16,7 @@
 
 
 ### Build
-- Install [nim](https://nim-lang.org/install.html) (preferably using choosenim)
+- Install [nim](https://nim-lang.org/install.html)
 
 
 

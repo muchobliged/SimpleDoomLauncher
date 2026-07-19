@@ -56,5 +56,5 @@
 
 ##
 
-#### Why?
+### Why?
 I'm a newbie dev, so this project is a way for me to learn nim gui building(via ImGui) and nim overall as a programming language

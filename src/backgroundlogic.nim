@@ -28,7 +28,7 @@ type
 
 let appName: string = "MO_SimpleDoomLauncher"
 
-var version*: string = "Ver. 1.0"
+var version*: string = "Ver. 1.01"
 
 var configPath: string
 var isFirstLaunch*: bool = true
@@ -169,12 +169,22 @@ proc runPort*(portIndx: int, confIndx: int) =
         )
     else:
       when defined(linux):
+        var iwad = state.ports[portIndx].configs[confIndx].iwad
+        var pwads = state.ports[portIndx].configs[confIndx].pwads
+        var wadsDirs: seq[string] = @[]            # directories with wads, to give flatpak port permission to access
+        wadsDirs.add(splitFile($iwad).dir)
+        for i in 0 .. pwads.high:
+          wadsDirs.add(splitFile(pwads[i]).dir)
+        wadsDirs = wadsDirs.deduplicate()
+
         var flatpakArgs: seq[string] = @["run"]    #"--socket=x11", "--nosocket=wayland"
         flatpakArgs.add(runArgs[0])
+        for i in 0 .. wadsDirs.high:
+          flatpakArgs.add("--filesystem=" & wadsDirs[i])      #give flatpak port permission to access directories with wads
         flatpakArgs.add($portExec)
         flatpakArgs.add(runArgs[1])
         let flatpakPath = findExe("flatpak")
-        #echo $flatpakArgs
+        echo $flatpakArgs
         let process = startProcess(
             command = flatpakPath,
             args = flatpakArgs,

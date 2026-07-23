@@ -22,19 +22,26 @@ type
     defaultPWADDirectory*: string
     doPortable*: bool = true
     closeOnLaunch*: bool = false
-    leftWindowWidth*: float32 = 100
+    leftWindowWidth*: float32 = 125
     styleIndex*: int32 = 0
+    lang*: int32 = 0
 
 
 let appName: string = "MO_SimpleDoomLauncher"
 
-var version*: string = "Ver. 1.01"
+var version*: string = "Ver. 1.1"
 
 var configPath: string
 var isFirstLaunch*: bool = true
 var state*: ProgramState
+var bufferConfig*: PortConfig
+var copyConfig*: bool = false
 #var systemFont*: string = ""
 #var iAmFlatpak*: bool = false
+
+var readyZDL*: bool = false
+var newZDLPWADS*: seq[string] = @[]
+var newZDLExtra*: string = ""
 
 var allExtensions* = @[".wad",".pk3", ".pk7"]
 var allExtensionsAst* = @["*.wad","*.pk3", "*.pk7"]
@@ -43,6 +50,10 @@ var iwadBehavOptions = @["Default", "Doomsday"]
 var iwadBehavOptionsExpl* = @["Default: -iwad <iwad.wad> -file <pwad.wad>", "Doomsday: -iwad <directory> -file <pwad.wad>"]
 
 var iwadBehavOptionsCSTRING*: seq[cstring] = iwadBehavOptions.mapIt(it.cstring)
+
+var langs = @["English", "Русский"]
+
+var langsCSTRING*: seq[cstring] = langs.mapIt(it.cstring)
 
 const loadOptions = Joptions(allowMissingKeys: true, allowExtraKeys: true)
 
@@ -93,6 +104,26 @@ when defined(linux):
 
 else:
   var isFlatpak*: bool = false
+
+
+proc loadZDL*(p: string) =
+  readyZDL = false
+  if fileExists(p):
+    newZDLPWADS = @[]
+    newZDLExtra = ""
+    let zdlString = readFile(p)
+    for line in zdlString.splitLines:
+      if line.startsWith("file"):
+        if line.split('=', 1)[1].len > 0:
+          newZDLPWADS.add(line.split('=', 1)[1])
+      elif line.startsWith("extra="):
+        if line.split('=', 1)[1].len > 0:
+          newZDLExtra = line.split('=', 1)[1]
+    if newZDLPWADS.len > 1:
+      newZDLPWADS = newZDLPWADS.deduplicate()
+    if newZDLExtra.len > 0 or newZDLPWADS.len > 0:
+      readyZDL = true
+
 
 proc ifExtensionCorrect*(path: string): bool =
   if allExtensions.anyIt(path.toLower().endsWith(it)):
@@ -184,7 +215,7 @@ proc runPort*(portIndx: int, confIndx: int) =
         flatpakArgs.add($portExec)
         flatpakArgs.add(runArgs[1])
         let flatpakPath = findExe("flatpak")
-        echo $flatpakArgs
+        #echo $flatpakArgs
         let process = startProcess(
             command = flatpakPath,
             args = flatpakArgs,
@@ -215,6 +246,10 @@ proc removeUnsupportedPWADs*(portIndx: int) =
   for i in 0 .. state.ports[portIndx].configs.high:
     for j in 1 .. allExtensions.high:
       state.ports[portIndx].configs[i].pwads = state.ports[portIndx].configs[i].pwads.filterIt(not it.toLower().endsWith(allExtensions[j]))
+
+proc removeUnsupportedPWADs*(portIndx: int, confIndx: int) =
+  for j in 1 .. allExtensions.high:
+    state.ports[portIndx].configs[confIndx].pwads = state.ports[portIndx].configs[confIndx].pwads.filterIt(not it.toLower().endsWith(allExtensions[j]))
 
 
 proc deleteConf*(portIndx: int, confIndx: int) =

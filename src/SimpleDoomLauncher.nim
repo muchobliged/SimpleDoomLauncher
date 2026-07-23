@@ -1,10 +1,10 @@
-import backgroundlogic, extraStyles
+import backgroundlogic, extraStyles, translation
 import std/[strutils, os, osproc]
 import nimgl/[opengl, glfw], nimgl/imgui, nimgl/imgui/[impl_opengl, impl_glfw]
 import tinydialogs
 
 
-#TODO   Flatpak build?            Compile to C?
+#TODO    Flatpak build?            Compile to C?
 
 
 
@@ -62,6 +62,7 @@ proc hyperlink(text, url: string) =
 
 
 const RawIconData = staticRead("../assets/icon.raw")
+const fontRawData = staticRead("../assets/ProggyClean_Extra.ttf")
 
 var img = GLFWImage(
   width: 64.int32,
@@ -79,7 +80,12 @@ proc setBuffer(buf: var array[256, char], text: string) =     #set igInputText t
 
 var shouldOpenAddPort: bool = false
 var shouldAddDragWAD: bool = false
+var shouldAddZDL: bool = false
 var dragPath: string = ""
+
+
+var fontConfig: ImFontConfig
+var newFont: ptr ImFont
 
 
 proc main() =
@@ -119,6 +125,18 @@ proc main() =
   let io = igGetIO()
   io.iniFilename = nil        #disable imgui saves
 
+  fontConfig.fontDataOwnedByAtlas = false
+
+  #let newFont = io.fonts.addFontFromFileTTF("/home/muchobliged/Desktop/ProggyClean_Extra.ttf", 13.0, nil, io.fonts.getGlyphRangesCyrillic())#("/home/muchobliged/Desktop/Hack-Regular.ttf", 13.0)
+
+  let newFont = io.fonts.addFontFromMemoryTTF(cast[pointer](fontRawData.cstring), fontRawData.len.int32, 13.0, addr fontConfig, io.fonts.getGlyphRangesCyrillic())#("/home/muchobliged/Desktop/Hack-Regular.ttf", 13.0)
+  if newFont.isNil:
+    echo "Warning: Cyrillic font not found – using default (ASCII only)"
+
+  io.fonts.build()
+
+
+
 
   doAssert igGlfwInitForOpenGL(w, true)
   doAssert igOpenGL3Init()
@@ -138,8 +156,10 @@ proc main() =
       let path: string = $pathCString
 
       #echo "File dropped from OS: ", path
-
-      if ifExtensionCorrect(path):
+      if path.toLower().endsWith(".zdl"):
+        shouldAddZDL = true
+        dragPath = path
+      elif ifExtensionCorrect(path):
         shouldAddDragWAD = true
         dragPath = path
       elif isExecutable(path):
@@ -163,6 +183,7 @@ proc main() =
   let style = igGetStyle()
 
   setSelectedStyle(state.styleIndex)
+  setLang(state.lang)
 
   var iwadList: seq[string]
   var pwadList: seq[string]
@@ -181,10 +202,12 @@ proc main() =
   var comboIndexFlatpak: int32 = 0
   var showAddPortModal = false
   var showConfRenameModal = true
+  var showConfDeleteModal = true
   var showSettingsModal = true
   var showPortConfigModal = true
   var selectedPortExec: string = ""
   var configuredPort: int = -1
+  var shouldPasteConfig: bool = false
 
 
   if state.ports.len > 0:
@@ -209,10 +232,11 @@ proc main() =
     let mainFlags2 = cast[ImGuiWindowFlags](ImGuiWindowFlags.NoTitleBar.int or ImGuiWindowFlags.NoMove.int or ImGuiWindowFlags.NoBringToFrontOnFocus.int or ImGuiWindowFlags.NoResize.int)
 
     let isMouseHoveringLeftWindow = igIsMouseHoveringRect(
-      ImVec2(x: 0, y: 0), #ImVec2(x: 25.0, y: itemHeight),
-      ImVec2(x: 300.0, y: viewport.size.y),    #ImVec2(x: 300.0, y: viewport.size.y - itemHeight),
+      ImVec2(x: 5, y: 0),
+      ImVec2(x: viewport.size.x, y: viewport.size.y),
       false
       )                       #hack to make left window resizable only from right border
+
     var leftWindowAvailSize: ImVec2
     var rightWindowAvailSize: ImVec2
     glfwPollEvents()
@@ -246,11 +270,12 @@ proc main() =
       if showAddPortModal:
         selectedPortExec = dragPath           # drag into already opened AddPortModal
         shouldOpenAddPort = false
-      elif not isMouseHoveringLeftWindow:     # allow drop-add only in left side of the window
+      elif not leftWindowHovered:             # allow drop-add only in left side of the window
         shouldOpenAddPort = false
-
-    if igButton("Add Port", ImVec2(x: leftWindowAvailSize.x, y: 0)) or shouldOpenAddPort:
-      igOpenPopup("Add Port##999")
+    # Add port button to open popup
+    if igButton(trans.addport & "###Add Port Button", ImVec2(x: leftWindowAvailSize.x, y: 0)) or shouldOpenAddPort:
+      #igOpenPopup("Add Port##999")
+      igOpenPopup("###Add Port Popup")
       showAddPortModal = true
       selectedPortExec = ""
       currentText = ""
@@ -270,9 +295,9 @@ proc main() =
 #----------------------------------------------------
 
 
-    igSetNextWindowSize(ImVec2(x: viewport.size.x / 2.5f, y: viewport.size.y / 2), ImGuiCond.Appearing)
+    igSetNextWindowSize(ImVec2(x: viewport.size.x / 2.5f, y: viewport.size.y / 1.85f), ImGuiCond.Appearing)
     igSetNextWindowPos(windowCenter, ImGuiCond.Appearing, ImVec2(x: 0.5f, y: 0.5f))
-    if igBeginPopupModal("Add Port##999", showAddPortModal.addr, cast[ImGuiWindowFlags](ImGuiWindowFlags.NoResize.int)):
+    if igBeginPopupModal(trans.addport & "###Add Port Popup", showAddPortModal.addr, cast[ImGuiWindowFlags](ImGuiWindowFlags.NoResize.int)):
       if igIsKeyPressed(256, false):          #for some reason nimgl bindings don't work, so 256 = Escape
         showAddPortModal = false
       var isChanged: bool = false
@@ -285,25 +310,27 @@ proc main() =
       if isExecutable(selectedPortExec):
         foldText = extractFilename(selectedPortExec)
       else:
-        foldText = "Select executable"
+        foldText = trans.selectexecutable
 
       var buttSize = availReg.x/1.5f
-
+      # Port name input
       igSetCursorPosX(style.windowPadding.x + availReg.x/2 - buttSize/2)
       igSetNextItemWidth(buttSize)
-      if igInputTextWithHint("##input", "Port name", textBuf[0].addr, 256):
+      if igInputTextWithHint("##input", trans.portname, textBuf[0].addr, 256):
         currentText = $cstring(textBuf[0].addr)
         currentText = currentText.strip()
         isChanged = true
 
       if not isFlatpak or not useFlatpak:
+        # Select port button
         igSetCursorPosX(style.windowPadding.x + availReg.x/2 - buttSize/2)
         if igButton(foldText & "##99999", ImVec2(x: buttSize, y: 0)):
-          selectedPortExec = openFileDialog("Select executable", getCurrentDir() / "\0", when defined(windows): ["*.exe"] else: ["*"])
+          selectedPortExec = openFileDialog(trans.selectexecutable, getCurrentDir() / "\0", when defined(windows): ["*.exe"] else: ["*"])
           isChanged = true
       else:
         when defined(linux):
           if useFlatpak:
+            # Select flatpak combo
             igSetCursorPosX(style.windowPadding.x + availReg.x/2 - buttSize/2)
             igSetNextItemWidth(buttSize)
             discard igCombo("##Flatpak99999", comboIndexFlatpak.addr, flatpakListCSTRING[0].addr, flatpakListCSTRING.len.int32, -1)
@@ -311,11 +338,12 @@ proc main() =
           discard #fallback
 
 
-      igCalcTextSizeNonUDT(textSize.addr, "Commands preset:", nil, false, -1.0)
+      igText("")
+      igCalcTextSizeNonUDT(textSize.addr, trans.commandspreset, nil, false, -1.0)
       igGetContentRegionAvailNonUDT(availReg.addr)
       igSetCursorPosX(style.windowPadding.x + availReg.x/2 - (textSize.x + style.itemSpacing.x + availReg.x/3) / 2)
       igAlignTextToFramePadding()
-      igText("Commands preset:")
+      igText(trans.commandspreset)
       if igIsItemHovered():
         igBeginTooltip()
         for el in 0 .. iwadBehavOptionsExpl.high:
@@ -323,15 +351,16 @@ proc main() =
         igEndTooltip()
       igSameLine()
       igSetNextItemWidth(availReg.x/3)
+      # Iwad behav combo
       discard igCombo("##99998", comboIndexIWADBehav.addr, iwadBehavOptionsCSTRING[0].addr, iwadBehavOptionsCSTRING.len.int32, -1)
 
-      igCalcTextSizeNonUDT(textSize.addr, "Extra formats:    ", nil, false, -1.0)
+      igCalcTextSizeNonUDT(textSize.addr, trans.extraformats & "    ", nil, false, -1.0)
       igGetContentRegionAvailNonUDT(availReg.addr)
       igSetCursorPosX(style.windowPadding.x + availReg.x/2 - (textSize.x + style.itemSpacing.x) / 2)
       igAlignTextToFramePadding()
-      igText("Extra formats:")
+      igText(trans.extraformats)
       if igIsItemHovered():
-        igSetTooltip("Allow formats like .pk3 and .pk7")
+        igSetTooltip(trans.extraformatsFAQ)
       igSameLine()
       igCheckbox("##extraformats", allowExtraFormats.addr)
 
@@ -366,7 +395,7 @@ proc main() =
       igText("")
       igBeginDisabled(not canAddPort)
       igSetCursorPosX(style.windowPadding.x + availReg.x/2 - (buttSize/2))
-      if igButton("Add", ImVec2(x: buttSize, y: itemHeight * 1.25f)):
+      if igButton(trans.add, ImVec2(x: buttSize, y: itemHeight * 1.25f)):
         var pathToAdd: string
         pathToAdd = selectedPortExec
         when defined(linux):
@@ -400,7 +429,7 @@ proc main() =
       pwadList = walkSelectedDir(state.defaultPWADDirectory, if state.ports[state.selectedPort].allowExtraFormats: allExtensions else: @[".wad"])
 
       if igBeginPopupContextItem("##portSettings", ImGuiPopupFlags.MouseButtonRight):
-        if igButton("Configure"):
+        if igButton(trans.configure):
           shouldConfig = n
           igCloseCurrentPopup()
 
@@ -424,7 +453,7 @@ proc main() =
 
     if shouldConfig >= 0:
       configuredPort = shouldConfig
-      igOpenPopup("Configure port##2000")
+      igOpenPopup("###Configure Port Popup")
       showPortConfigModal = true
       canSaveConfPort = true
       selectedPortExec = state.ports[shouldConfig].path
@@ -444,8 +473,8 @@ proc main() =
       wantToDeletePort = false
 
 
-    if igButton("Settings", ImVec2(x: leftWindowAvailSize.x, y: 0)) or isFirstLaunch:
-      igOpenPopup("Settings###1000")
+    if igButton(trans.settings, ImVec2(x: leftWindowAvailSize.x, y: 0)) or isFirstLaunch:
+      igOpenPopup("###Settings")
       showSettingsModal = true
       if not isFirstLaunch:
         showAbout = false
@@ -463,9 +492,9 @@ proc main() =
 #-------------- Settings popup begin ----------------
 #----------------------------------------------------
 
-    igSetNextWindowSize(ImVec2(x: viewport.size.x / 2, y: viewport.size.y / 1.5f), ImGuiCond.Appearing)
+    igSetNextWindowSize(ImVec2(x: viewport.size.x / 2, y: viewport.size.y / 1.35f), ImGuiCond.Appearing)
     igSetNextWindowPos(windowCenter, ImGuiCond.Appearing, ImVec2(x: 0.5f, y: 0.5f))
-    if igBeginPopupModal(if not showAbout: "Settings###1000" else: "About###1000", if not isFirstLaunch: showSettingsModal.addr else: nil, ImGuiWindowFlags.NoResize):
+    if igBeginPopupModal(if not showAbout: trans.settings & "###Settings" else: trans.about & "###Settings", if not isFirstLaunch: showSettingsModal.addr else: nil, ImGuiWindowFlags.NoResize):
       if igIsKeyPressed(256, false):    #for some reason nimgl bindings don't work, so 256 = Escape
         if not showAbout and not isFirstLaunch:
           showSettingsModal = false
@@ -482,89 +511,80 @@ proc main() =
         igText("(?)")
         if igIsItemHovered():
           igBeginTooltip()
-          igText("Some tips:")
-          igText("- right click selected port to configure it")
-          igText("")
-          igText("- right click selected config to rename or")
-          igText("delete it")
-          igText("")
-          igText("- ports and configs are rearrangeable via")
-          igText("holding left mouse button and dragging")
-          igText("")
-          igText("- items in the selected PWADs area are also")
-          igText("rearrangeable - it changes order of loading")
-          igText("")
-          igText("- in the selected PWADs area press right mouse")
-          igText("button to remove PWAD from the list")
-          igText("")
-          igText("- you can drag-n-drop executable into the")
-          igText("left side of the main window")
-          igText("")
-          igText("- you can add extra PWAD that is not in the")
-          igText("PWADs folder by either drag-n-dropping the file")
-          igText("into the selected PWADs area or by pressing")
-          igText("corresponding button")
+          for it in trans.tips:
+            igText(it)
           igEndTooltip()
-        igCalcTextSizeNonUDT(textSize.addr, "Theme:", nil, false, -1.0)
+
+        igCalcTextSizeNonUDT(textSize.addr, trans.language, nil, false, -1.0)
         igGetContentRegionAvailNonUDT(availReg.addr)
-        igSetCursorPosX(style.windowPadding.x + availReg.x/2 - (textSize.x + style.itemSpacing.x + availReg.x/2) / 2)
+        igSetCursorPosX(style.windowPadding.x + availReg.x/2 - (textSize.x + style.itemSpacing.x + availReg.x/2.5f) / 2)
         igAlignTextToFramePadding()
-        igText("Theme:")
+        igText(trans.language)
         igSameLine()
-        igSetNextItemWidth(availReg.x/2)
+        igSetNextItemWidth(availReg.x/2.5f)
+        if igCombo("###language combo", state.lang.addr, langsCSTRING[0].addr, langsCSTRING.len.int32, -1):
+          setLang(state.lang)
+
+        igCalcTextSizeNonUDT(textSize.addr, trans.theme, nil, false, -1.0)
+        igGetContentRegionAvailNonUDT(availReg.addr)
+        igSetCursorPosX(style.windowPadding.x + availReg.x/2 - (textSize.x + style.itemSpacing.x + availReg.x/2.5f) / 2)
+        igAlignTextToFramePadding()
+        igText(trans.theme)
+        igSameLine()
+        igSetNextItemWidth(availReg.x/2.5f)
         if igCombo("##1001", state.styleIndex.addr, availStylesCSTRING[0].addr, availStylesCSTRING.len.int32, -1):
           setSelectedStyle(state.styleIndex)
         igText("")
         var iwadButtText: string
         var pwadButtText: string
         if selectedFoldIWAD.len <= 0:
-          iwadButtText = "Select"
+          iwadButtText = trans.select
         else:
           iwadButtText = selectedFoldIWAD
         if selectedFoldPWAD.len <= 0:
-          pwadButtText = "Select"
+          pwadButtText = trans.select
         else:
           pwadButtText = selectedFoldPWAD
-        igCalcTextSizeNonUDT(textSize.addr, "IWADs directory:", nil, false, -1.0)
+        igCalcTextSizeNonUDT(textSize.addr, trans.iwadsdirectory, nil, false, -1.0)
         igGetContentRegionAvailNonUDT(availReg.addr)
         igSetCursorPosX(style.windowPadding.x + availReg.x/2 - (textSize.x + style.itemSpacing.x + availReg.x/3) / 2)
         igAlignTextToFramePadding()
-        igText("IWADs directory:")
+        igText(trans.iwadsdirectory)
         igSameLine()
-        if igButton(extractFilename(iwadButtText) & "##8000", ImVec2(x: availReg.x/3, y: 0)):
-          selectedFoldIWAD = selectFolderDialog("Select directory with IWADs", getCurrentDir())
+        if igButton(extractFilename(iwadButtText) & "###select iwad dir button", ImVec2(x: availReg.x/3, y: 0)):
+          selectedFoldIWAD = selectFolderDialog(trans.iwadsdirectoryHelper, getCurrentDir())
           if selectedFoldIWAD.len > 0:
             selectedFoldIWAD = fixFold(selectedFoldIWAD)
-        igCalcTextSizeNonUDT(textSize.addr, "PWADs directory:", nil, false, -1.0)
+        igCalcTextSizeNonUDT(textSize.addr, trans.pwadsdirectory, nil, false, -1.0)
         igGetContentRegionAvailNonUDT(availReg.addr)
         igSetCursorPosX(style.windowPadding.x + availReg.x/2 - (textSize.x + style.itemSpacing.x + availReg.x/3) / 2)
         igAlignTextToFramePadding()
-        igText("PWADs directory:")
+        igText(trans.pwadsdirectory)
         igSameLine()
-        if igButton(extractFilename(pwadButtText) & "##8001", ImVec2(x: availReg.x/3, y: 0)):
-          selectedFoldPWAD = selectFolderDialog("Select directory with PWADs", getCurrentDir())
+        if igButton(extractFilename(pwadButtText) & "###select pwad dir button", ImVec2(x: availReg.x/3, y: 0)):
+          selectedFoldPWAD = selectFolderDialog(trans.pwadsdirectoryHelper, getCurrentDir())
           if selectedFoldPWAD.len > 0:
             selectedFoldPWAD = fixFold(selectedFoldPWAD)
 
 
         igText("")
-        igCalcTextSizeNonUDT(textSize.addr, "Try to make ports execs portable:    ", nil, false, -1.0) #idk what checkbox size is so spaces work just fine
+        igCalcTextSizeNonUDT(textSize.addr, trans.makeexecportable & "    ", nil, false, -1.0) #idk what checkbox size is so spaces work just fine
         igGetContentRegionAvailNonUDT(availReg.addr)
         igSetCursorPosX(style.windowPadding.x + availReg.x/2 - (textSize.x + style.itemSpacing.x) / 2)
         igAlignTextToFramePadding()
-        igText("Try to make ports execs portable:")
+        igText(trans.makeexecportable)
         if igIsItemHovered():
-          igSetTooltip("Use .home folder near executable")
+          igSetTooltip(trans.makeexecportableFAQ)
         igSameLine()
         igCheckbox("##8002", doPortable.addr)
 
-        igCalcTextSizeNonUDT(textSize.addr, "Close on launch:    ", nil, false, -1.0) #idk what checkbox size is so spaces work just fine
+        igCalcTextSizeNonUDT(textSize.addr, trans.closeonlaunch & "    ", nil, false, -1.0) #idk what checkbox size is so spaces work just fine
         igGetContentRegionAvailNonUDT(availReg.addr)
         igSetCursorPosX(style.windowPadding.x + availReg.x/2 - (textSize.x + style.itemSpacing.x) / 2)
         igAlignTextToFramePadding()
-        igText("Close on launch:")
+        igText(trans.closeonlaunch)
         if igIsItemHovered():
-          igSetTooltip("Close this launcher when the port is running")
+          igSetTooltip(trans.closeonlaunchFAQ)
         igSameLine()
         igCheckbox("##8003", closeOnLaunch.addr)
 
@@ -572,7 +592,7 @@ proc main() =
         igText("")
         igBeginDisabled(selectedFoldIWAD.len <= 0 or selectedFoldPWAD.len <= 0)
         igSetCursorPosX(style.windowPadding.x + availReg.x/2 - (availReg.x/2.5f)/2)
-        if igButton("Save##8004", ImVec2(x: availReg.x/2.5f, y: itemHeight * 1.25f)):
+        if igButton(trans.save & "##8004", ImVec2(x: availReg.x/2.5f, y: itemHeight * 1.25f)):
           state.defaultIWADDirectory = selectedFoldIWAD
           state.defaultPWADDirectory = selectedFoldPWAD
           state.doPortable = doPortable
@@ -588,7 +608,7 @@ proc main() =
         igText("")
         igSeparator()
         igSetCursorPosX(style.windowPadding.x + availReg.x/2 - (availReg.x/3)/2)
-        if igButton("About", ImVec2(x: availReg.x/3, y: itemHeight * 0.95f)):
+        if igButton(trans.about, ImVec2(x: availReg.x/3, y: itemHeight * 0.95f)):
           showAbout = true
         igSeparator()
       else:
@@ -596,16 +616,17 @@ proc main() =
         igGetContentRegionAvailNonUDT(availReg.addr)
         igText("")
         igText("")
-        igCalcTextSizeNonUDT(textSize.addr, "Created by: much obliged", nil, false, -1.0)
+        igText("")
+        igCalcTextSizeNonUDT(textSize.addr, trans.createdby & "much obliged", nil, false, -1.0)
         igSetCursorPosX(style.windowPadding.x + availReg.x/2 - textSize.x / 2)
-        igText("Created by: ")
+        igText(trans.createdby)
         igSameLine()
         hyperlink("much obliged", "https://github.com/muchobliged")
         igText("")
         igText("")
-        igCalcTextSizeNonUDT(textSize.addr, "Extra credits:", nil, false, -1.0)
+        igCalcTextSizeNonUDT(textSize.addr, trans.extracredits, nil, false, -1.0)
         igSetCursorPosX(style.windowPadding.x + availReg.x/2 - textSize.x / 2)
-        igText("Extra credits:")
+        igText(trans.extracredits)
         igSetCursorPosX(style.windowPadding.x + availReg.x/2 - (availReg.x/1.5f) / 2)
         igBeginChild("AboutCreditsUp", ImVec2(x: availReg.x/1.5f, y: availReg.y/4))
         igGetContentRegionAvailNonUDT(availRegChild.addr)
@@ -633,7 +654,7 @@ proc main() =
         igText(version)
         igSetCursorPosY(availReg.y)
         igSetCursorPosX(style.windowPadding.x + availReg.x/2 - (availReg.x/2)/2)
-        if igButton("Back", ImVec2(x: availReg.x/2f, y: itemHeight * 1.25f)):
+        if igButton(trans.back, ImVec2(x: availReg.x/2f, y: itemHeight * 1.25f)):
           showAbout = false
       igEndPopup()
 
@@ -647,7 +668,7 @@ proc main() =
 
     igSetNextWindowSize(ImVec2(x: viewport.size.x / 2, y: viewport.size.y / 1.5f), ImGuiCond.Appearing)
     igSetNextWindowPos(windowCenter, ImGuiCond.Appearing, ImVec2(x: 0.5f, y: 0.5f))
-    if igBeginPopupModal("Configure port##2000", showPortConfigModal.addr, ImGuiWindowFlags.NoResize):
+    if igBeginPopupModal(trans.configureport & "###Configure Port Popup", showPortConfigModal.addr, ImGuiWindowFlags.NoResize):
       if igIsKeyPressed(256, false):          #for some reason nimgl bindings don't work, so 256 = Escape
         if not wantToDeletePort:
           showPortConfigModal = false
@@ -670,7 +691,7 @@ proc main() =
       var foldText: string
       if not wantToDeletePort:
 
-        foldText = "Select executable"
+        foldText = trans.selectexecutable
         if not isThisFlatpak:
           if isExecutable(selectedPortExec):
             foldText = extractFilename(selectedPortExec)
@@ -691,7 +712,7 @@ proc main() =
         if not isThisFlatpak:
           igSetCursorPosX(style.windowPadding.x + availReg.x/2 - buttSize/2)
           if igButton(foldText & "##selectexec", ImVec2(x: buttSize, y: 0)):
-            selectedPortExec = openFileDialog("Select executable", getCurrentDir() / "\0", when defined(windows): ["*.exe"] else: ["*"])
+            selectedPortExec = openFileDialog(trans.selectexecutable, getCurrentDir() / "\0", when defined(windows): ["*.exe"] else: ["*"])
             isChanged = true
         else:
           when defined(linux):
@@ -703,11 +724,11 @@ proc main() =
 
 
 
-        igCalcTextSizeNonUDT(textSize.addr, "Commands preset:", nil, false, -1.0)
+        igCalcTextSizeNonUDT(textSize.addr, trans.commandspreset, nil, false, -1.0)
         igGetContentRegionAvailNonUDT(availReg.addr)
         igSetCursorPosX(style.windowPadding.x + availReg.x/2 - (textSize.x + style.itemSpacing.x + availReg.x/3) / 2)
         igAlignTextToFramePadding()
-        igText("Commands preset:")
+        igText(trans.commandspreset)
         if igIsItemHovered():
           igBeginTooltip()
           for el in 0 .. iwadBehavOptionsExpl.high:
@@ -718,13 +739,13 @@ proc main() =
         discard igCombo("##99998", comboIndexIWADBehav.addr, iwadBehavOptionsCSTRING[0].addr, iwadBehavOptionsCSTRING.len.int32, -1)
 
 
-        igCalcTextSizeNonUDT(textSize.addr, "Extra formats:    ", nil, false, -1.0)
+        igCalcTextSizeNonUDT(textSize.addr, trans.extraformats & "    ", nil, false, -1.0)
         igGetContentRegionAvailNonUDT(availReg.addr)
         igSetCursorPosX(style.windowPadding.x + availReg.x/2 - (textSize.x + style.itemSpacing.x) / 2)
         igAlignTextToFramePadding()
-        igText("Extra formats:")
+        igText(trans.extraformats)
         if igIsItemHovered():
-          igSetTooltip("Allow formats like .pk3 and .pk7")
+          igSetTooltip(trans.extraformatsFAQ)
         igSameLine()
         igCheckbox("##extraformats", allowExtraFormats.addr)
 
@@ -749,7 +770,7 @@ proc main() =
 
         igBeginDisabled(not canSaveConfPort or (isThisFlatpak and not isFlatpak))
         igSetCursorPosX(style.windowPadding.x + availReg.x/2 - buttSize/2)
-        if igButton("Save", ImVec2(x: buttSize, y: itemHeight * 1.25f)):
+        if igButton(trans.save, ImVec2(x: buttSize, y: itemHeight * 1.25f)):
           state.ports[configuredPort].name = currentText
           if not isThisFlatpak:
             state.ports[configuredPort].path = selectedPortExec
@@ -774,14 +795,14 @@ proc main() =
         igGetContentRegionAvailNonUDT(availReg.addr)
         igSetCursorPosY(viewport.size.y / 1.5f - style.windowPadding.y - availReg.y/2 - (availReg.y / 1.5f) / 2)
         igSetCursorPosX(style.windowPadding.x + availReg.x/2 - (availReg.x / 2) / 2)
-        if igButton("Remove port", ImVec2(x: availReg.x / 2, y: availReg.y / 1.5f)):
+        if igButton(trans.removeport, ImVec2(x: availReg.x / 2, y: availReg.y / 1.5f)):
           wantToDeletePort = true
       else:
         igText("")
         igText("")
         igText("")
-        var warningText: string = "Remove selected port and all related configs?"
-        var warningText1: string = "Are you sure?"
+        var warningText: string = trans.removeportWarning[0]
+        var warningText1: string = trans.removeportWarning[1]
         igCalcTextSizeNonUDT(textSize.addr, warningText, nil, false, -1.0)
         igSetCursorPosX(style.windowPadding.x + availReg.x/2 - (textSize.x) / 2)
         igAlignTextToFramePadding()
@@ -792,12 +813,12 @@ proc main() =
         igText(warningText1)
         igText("")
         igSetCursorPosX(style.windowPadding.x + availReg.x/2 - (availReg.x / 3 + style.itemSpacing.x + availReg.x / 3) / 2)
-        if igButton("Yes##12345", ImVec2(x: availReg.x / 3, y: 0)):
+        if igButton(trans.yes & "##12345", ImVec2(x: availReg.x / 3, y: 0)):
           wantToDeletePort = false
           showPortConfigModal = false
           deletePort(configuredPort)
         igSameLine()
-        if igButton("No##01234", ImVec2(x: availReg.x / 3, y: 0)):
+        if igButton(trans.no & "##01234", ImVec2(x: availReg.x / 3, y: 0)):
           wantToDeletePort = false
 
       igEndPopup()
@@ -827,12 +848,44 @@ proc main() =
       igBeginChild("Tabs", ImVec2(x: rightWindowAvailSize.x, y: itemHeight * 1.25f + style.itemSpacing.y * 2), false, ImGuiWindowFlags.HorizontalScrollbar)
       var availReg: ImVec2
       igGetContentRegionAvailNonUDT(availReg.addr)
-      style.selectableTextAlign = ImVec2(x: 0.5f, y: 0.5f)
-      var shouldDeleteTab = -1
+      style.selectableTextAlign = ImVec2(x: 0.5f, y: 0.7f)
+      var shouldDeleteConf = false
       var shouldAddTab = false
       var shouldRenameConf = false
+
+      if shouldAddZDL:
+        shouldAddZDL = false
+        if igIsMouseHoveringRect(ImVec2(x: state.leftWindowWidth, y: 0), ImVec2(x: viewport.size.x, y: viewport.size.y), false):
+          var zdlPath = dragPath
+          if zdlPath.len > 0:
+            loadZDL(zdlPath)
+          if readyZDL:
+            shouldAddTab = true
+
+
       if igSelectable("  +  ", false, ImGuiSelectableFlags.None, ImVec2(x: availReg.x/20, y: itemHeight)):
         shouldAddTab = true
+
+      if igBeginPopupContextItem("  +  " & "##tryToAddStuff", ImGuiPopupFlags.MouseButtonRight):
+        var availRegTabsRenamePopup: ImVec2
+        igGetContentRegionAvailNonUDT(availRegTabsRenamePopup.addr)
+
+        if copyConfig:
+          if igButton(trans.paste, ImVec2(x: availRegTabsRenamePopup.x, y: 0)):
+            shouldPasteConfig = true
+            shouldAddTab = true
+            igCloseCurrentPopup()
+
+        if igButton(trans.addzdlconfig, ImVec2(x: availRegTabsRenamePopup.x, y: 0)):
+          var zdlPath = openFileDialog(trans.selectzdlconfig, getCurrentDir() / "\0", @["*.zdl"])
+          if zdlPath.len > 0:
+            loadZDL(zdlPath)
+          if readyZDL:
+            shouldAddTab = true
+          igCloseCurrentPopup()
+
+        igEndPopup()
+
       var port = addr(state.ports[state.selectedPort])
       if port.configs.len > 0:
         var confs = addr(state.ports[state.selectedPort].configs)
@@ -844,18 +897,24 @@ proc main() =
             port.selectedConfig = i
             iwadList = walkSelectedDir(state.defaultIWADDirectory, if port.allowExtraFormats: allExtensions else: @[".wad"])
             pwadList = walkSelectedDir(state.defaultPWADDirectory, if port.allowExtraFormats: allExtensions else: @[".wad"])
+          if port.selectedConfig == i:
+            if igBeginPopupContextItem($tab.name & "##tabDeletePopUp", ImGuiPopupFlags.MouseButtonRight):
+              var availRegTabsRenamePopup: ImVec2
+              igGetContentRegionAvailNonUDT(availRegTabsRenamePopup.addr)
+              if igButton(trans.rename, ImVec2(x: availRegTabsRenamePopup.x, y: 0)):
+                shouldRenameConf = true
+                igCloseCurrentPopup()
 
-          if igBeginPopupContextItem($tab.name & "##tabDeletePopUp", ImGuiPopupFlags.MouseButtonRight):
+              if igButton(trans.copy, ImVec2(x: availRegTabsRenamePopup.x, y: 0)):
+                bufferConfig = tab
+                copyConfig = true
+                igCloseCurrentPopup()
 
-            if igButton("Rename"):
-              shouldRenameConf = true
-              igCloseCurrentPopup()
+              if igButton(trans.delete, ImVec2(x: availRegTabsRenamePopup.x, y: 0)):
+                shouldDeleteConf = true
+                igCloseCurrentPopup()
 
-            if igButton("Delete"):
-              shouldDeleteTab = i
-              igCloseCurrentPopup()
-
-            igEndPopup()
+              igEndPopup()
 
           if igIsItemActive() and not igIsItemHovered():    #rearrangement for igSelectable
             var delta: ImVec2
@@ -870,9 +929,6 @@ proc main() =
               igResetMouseDragDelta(ImGuiMouseButton(0))
 
           igPopID()
-
-        if shouldDeleteTab >= 0:
-          deleteConf(state.selectedPort, shouldDeleteTab)
 
 
       if shouldAddTab:
@@ -889,8 +945,19 @@ proc main() =
               nameOk = false
               break
 
-
-        state.ports[state.selectedPort].configs.insert(PortConfig(name: $confName), 0)
+        if not readyZDL and not shouldPasteConfig:
+          state.ports[state.selectedPort].configs.insert(PortConfig(name: $confName), 0)
+        elif readyZDL and not shouldPasteConfig:
+          state.ports[state.selectedPort].configs.insert(PortConfig(name: $confName, pwads: if newZDLPWADS.len > 0: newZDLPWADS else: @[], commands: if newZDLExtra.len > 0: newZDLExtra else: ""), 0)
+          readyZDL = false
+          if not state.ports[state.selectedPort].allowExtraFormats:
+            removeUnsupportedPWADs(state.selectedPort, 0)
+        elif shouldPasteConfig and not readyZDL:
+          bufferConfig.name = $confName
+          state.ports[state.selectedPort].configs.insert(bufferConfig)
+          shouldPasteConfig = false
+          if not state.ports[state.selectedPort].allowExtraFormats:
+            removeUnsupportedPWADs(state.selectedPort, 0)
         port.selectedConfig = 0
 
       style.selectableTextAlign = ImVec2(x: 0, y: 0.5f)
@@ -902,7 +969,11 @@ proc main() =
         showConfRenameModal = true
         textBuf[0] = '\0'
         currentText = ""
-        igOpenPopup("Configuration rename##91111")
+        igOpenPopup("###Configuration rename")
+
+      if shouldDeleteConf:
+        showConfDeleteModal = true
+        igOpenPopup("###Configuration delete")
 
 #----------------------------------------------------
 #------------ Rename tab(conf) popup begin ----------
@@ -911,7 +982,7 @@ proc main() =
 
       igSetNextWindowSize(ImVec2(x: viewport.size.x / 3, y: viewport.size.y / 3), ImGuiCond.Appearing)
       igSetNextWindowPos(windowCenter, ImGuiCond.Appearing, ImVec2(x: 0.5f, y: 0.5f))
-      if igBeginPopupModal("Configuration rename##91111", showConfRenameModal.addr, ImGuiWindowFlags.NoResize):
+      if igBeginPopupModal(trans.configurationrename & "###Configuration rename", showConfRenameModal.addr, ImGuiWindowFlags.NoResize):
         if igIsKeyPressed(256, false):          #for some reason nimgl bindings don't work, so 256 = Escape
           showConfRenameModal = false
         var otherConfs = addr(state.ports[state.selectedPort].configs)
@@ -937,11 +1008,48 @@ proc main() =
         igText("")
         igBeginDisabled(not isNameGood or currentText.len <= 0)
         igSetCursorPosX(style.windowPadding.x + availReg.x/2 - (buttSize/2))
-        if igButton("Save##434343", ImVec2(x: buttSize, y: itemHeight * 1.25f)):
+        if igButton(trans.save & "##434343", ImVec2(x: buttSize, y: itemHeight * 1.25f)):
           selConf.name = currentText
           showConfRenameModal = false
         igEndDisabled()
         igEndPopup()
+
+
+#----------------------------------------------------
+#------------ Delete tab(conf) popup begin ----------
+#----------------------------------------------------
+
+
+      igSetNextWindowSize(ImVec2(x: viewport.size.x / 3, y: viewport.size.y / 3), ImGuiCond.Appearing)
+      igSetNextWindowPos(windowCenter, ImGuiCond.Appearing, ImVec2(x: 0.5f, y: 0.5f))
+      if igBeginPopupModal(trans.configurationdelete & "###Configuration delete", showConfDeleteModal.addr, ImGuiWindowFlags.NoResize):
+        if igIsKeyPressed(256, false):          #for some reason nimgl bindings don't work, so 256 = Escape
+          showConfDeleteModal = false
+        var textSize: ImVec2
+        var availReg: ImVec2
+        igGetContentRegionAvailNonUDT(availReg.addr)
+        igSeparator()
+        igText("")
+        var warningText: string = trans.removeconfigWarning[0]
+        var warningText1: string = trans.removeconfigWarning[1]
+        igCalcTextSizeNonUDT(textSize.addr, warningText, nil, false, -1.0)
+        igSetCursorPosX(style.windowPadding.x + availReg.x/2 - (textSize.x) / 2)
+        igAlignTextToFramePadding()
+        igText(warningText)
+        igCalcTextSizeNonUDT(textSize.addr, warningText1, nil, false, -1.0)
+        igSetCursorPosX(style.windowPadding.x + availReg.x/2 - (textSize.x) / 2)
+        igAlignTextToFramePadding()
+        igText(warningText1)
+        igText("")
+        igSetCursorPosX(style.windowPadding.x + availReg.x/2 - (availReg.x / 3 + style.itemSpacing.x + availReg.x / 3) / 2)
+        if igButton(trans.yes & "##12345", ImVec2(x: availReg.x / 3, y: 0)):
+          showConfDeleteModal = false
+          deleteConf(state.selectedPort, state.ports[state.selectedPort].selectedConfig)
+        igSameLine()
+        if igButton(trans.no & "##01234", ImVec2(x: availReg.x / 3, y: 0)):
+          showConfDeleteModal = false
+        igEndPopup()
+
 
 #----------------------------------------------------
 #---------------- tabs content begin ----------------
@@ -975,10 +1083,10 @@ proc main() =
         else:
           canPlay = false
           igSeparator()
-          discard igSelectable("IWADs not found!", false)
+          discard igSelectable(trans.iwadsnotfound, false)
 
           if igIsItemHovered():
-            igSetTooltip("Select proper IWADs directory in settings")
+            igSetTooltip(trans.selectproperiwadsdir)
 
           igSeparator()
         igEndListBox()
@@ -1018,15 +1126,15 @@ proc main() =
 
           igPopID()
         igSeparator()
-        if igSelectable("Add custom PWAD"):
-          customWAD = openFileDialog("Add custom PWAD", if state.defaultPWADDirectory != "": state.defaultPWADDirectory else: getCurrentDir() / "\0", if state.ports[state.selectedPort].allowExtraFormats: allExtensionsAst else: @["*.wad"])
+        if igSelectable(trans.addcustompwad):
+          customWAD = openFileDialog(trans.addcustompwad, if state.defaultPWADDirectory != "": state.defaultPWADDirectory else: getCurrentDir() / "\0", if state.ports[state.selectedPort].allowExtraFormats: allExtensionsAst else: @["*.wad"])
           if conf.pwads.contains(customWAD):
             customWAD = ""
         igSeparator()
 
         if shouldAddDragWAD:
           shouldAddDragWAD = false
-          if igIsWindowHovered():
+          if igIsMouseHoveringRect(ImVec2(x: state.leftWindowWidth, y: 0), ImVec2(x: viewport.size.x, y: viewport.size.y), false):
             if not state.ports[state.selectedPort].allowExtraFormats:
               if dragPath.toLower().endsWith(".wad"):
                 customWAD = dragPath
@@ -1053,23 +1161,23 @@ proc main() =
               igPopID()
         else:
           igSeparator()
-          discard igSelectable("PWADs not found!", false)
+          discard igSelectable(trans.pwadsnotfound, false)
 
           if igIsItemHovered():
-            igSetTooltip("Select proper PWADs directory in settings")
+            igSetTooltip(trans.selectproperiwadsdir)
 
           igSeparator()
 
         igEndListBox()
         igText("")
-        igCalcTextSizeNonUDT(textSize.addr, "Extra commands", nil, false, -1.0)
+        igCalcTextSizeNonUDT(textSize.addr, trans.extracommands, nil, false, -1.0)
         igGetContentRegionAvailNonUDT(availRegTabs.addr)
         igSetCursorPosX(availRegTabs.x/2 - textSize.x / 2)
-        igText("Extra commands")
+        igText(trans.extracommands)
         buttSize = availRegTabs.x/2
         igSetCursorPosX(availRegTabs.x/2 - buttSize / 2)
         igSetNextItemWidth(buttSize)
-        if igInputTextWithHint("##inputCommands", "-skill <4>", confCommandsTextBuf[0].addr, 256):
+        if igInputTextWithHint("##inputCommands", "-skill 4", confCommandsTextBuf[0].addr, 256):
           conf.commands = $cstring(confCommandsTextBuf[0].addr)
 
         igSameLine()
@@ -1077,29 +1185,16 @@ proc main() =
         igText("(?)")
         if igIsItemHovered():
           igBeginTooltip()
-          igText("You can pass port arguments here:")
-          igText("")
-          igText("-skill 4 -nosound")
-          igText("")
-          igText("Also you can pass program arguments. They must be")
-          igText("written first and closed with ; symbol:")
-          igText("")
-          igText("--socket=x11 --nosocket=wayland; -skill 4 -nosound")
+          for it in trans.extracommandsFAQ:
+            igText(it)
           igEndTooltip()
-          #conf.commands = conf.commands.strip()
-        #[var commandsText: string
-        var commandsSeq = conf.commands.splitWhitespace()
-        for i in 0 .. commandsSeq.high:
-          if i < commandsSeq.high:
-            commandsText &= commandsSeq[i] & " "
-          else:
-            commandsText &= commandsSeq[i]]#
+
         igText("")
         igText("")
         igBeginDisabled(not canPlay)
         buttSize = availRegTabs.x/2
         igSetCursorPosX(availRegTabs.x/2 - buttSize/2)
-        if igButton(if canPlay: "Play" else: "IWADs not found!", ImVec2(x: buttSize, y: itemHeight * 2)):
+        if igButton(if canPlay: trans.play else: trans.iwadsnotfound, ImVec2(x: buttSize, y: itemHeight * 2)):
           if conf.iwad.len <= 0 and iwadList.len > 0:
             conf.iwad = iwadList[0]
           runPort(state.selectedPort, state.ports[state.selectedPort].selectedConfig)

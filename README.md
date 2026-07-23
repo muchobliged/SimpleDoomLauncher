@@ -48,7 +48,7 @@
   - or via [Flatseal](https://flathub.org/en/apps/com.github.tchx84.Flatseal)
 
 
-#### FIXED in v1.01. Flatpak port doesn't see selected IWAD/PWADs:
+#### FIXED since v1.01. Flatpak port doesn't see selected IWAD/PWADs:
 - Give the port permission to access specific folders:
   - In **_extra commands_** field add **--filesystem=** command with path. Example:
     > *--filesystem=/var/mnt/HDD/Doom/iWADs/ --filesystem=/var/mnt/HDD/Doom/WADs/;*

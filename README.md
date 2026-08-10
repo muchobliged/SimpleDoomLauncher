@@ -38,17 +38,18 @@
 ### Known issues and fixes
 #### Linux:
 
-####  KDE Plasma, freeze on open file dialog:
-- Install [kdialog](https://google.com/search?q=how+to+install+kdialog)
-
 #### Flatpak port doesn't respect keyboard inputs:
 - Force the port to use X11 instead of Wayland:
   - In **_extra commands_** field add **--socket=x11 --nosocket=wayland** commands. Example:
     > *--socket=x11 --nosocket=wayland;*
   - or via [Flatseal](https://flathub.org/en/apps/com.github.tchx84.Flatseal)
 
+#### KDE Plasma, freeze on open file dialog:
+- Should be FIXED since v1.2
+- Install [kdialog](https://google.com/search?q=how+to+install+kdialog)
 
-#### FIXED since v1.01. Flatpak port doesn't see selected IWAD/PWADs:
+#### Flatpak port doesn't see selected IWAD/PWADs:
+- FIXED since v1.01
 - Give the port permission to access specific folders:
   - In **_extra commands_** field add **--filesystem=** command with path. Example:
     > *--filesystem=/var/mnt/HDD/Doom/iWADs/ --filesystem=/var/mnt/HDD/Doom/WADs/;*

@@ -1,4 +1,4 @@
-import std/[jsonutils, json, os, osproc, strutils, sequtils, envvars, strtabs]
+import std/[jsonutils, json, os, osproc, strutils, sequtils, envvars, strtabs, streams]
 
 type
   SourcePort* = object
@@ -7,6 +7,7 @@ type
     iwadBehav*: int32 = 0
     allowExtraFormats*: bool = true
     selectedConfig*: int = 0
+    doPortable*: bool = false
     configs*: seq[PortConfig]
 
   PortConfig* = object
@@ -20,24 +21,29 @@ type
     selectedPort*: int = 0
     defaultIWADDirectory*: string
     defaultPWADDirectory*: string
-    doPortable*: bool = true
     closeOnLaunch*: bool = false
     leftWindowWidth*: float32 = 125
     styleIndex*: int32 = 0
     lang*: int32 = 0
+    checkForUpdates*: bool = true
 
 
 let appName: string = "MO_SimpleDoomLauncher"
 
-var version*: string = "Ver. 1.1"
+var version*: float = 1.2
+var latestVersion*: float = 0
+var updateInfo*: seq[string] = @[]
+var showUpdateModal*: bool = false
 
 var configPath: string
 var isFirstLaunch*: bool = true
 var state*: ProgramState
 var bufferConfig*: PortConfig
+var bufferConfigImport*: PortConfig
 var copyConfig*: bool = false
 #var systemFont*: string = ""
-#var iAmFlatpak*: bool = false
+var isFlatpak*: bool = false
+var iAmFlatpak*: bool = false
 
 var readyZDL*: bool = false
 var newZDLPWADS*: seq[string] = @[]
@@ -81,11 +87,29 @@ const loadOptions = Joptions(allowMissingKeys: true, allowExtraKeys: true)
     return ""]#
 
 when defined(linux):
-  var isFlatpak*: bool = findExe("flatpak").len > 0
+  iAmFlatpak = getEnv("container") == "flatpak" or existsEnv("FLATPAK_ID")
+  isFlatpak = findExe("flatpak").len > 0 or iAmFlatpak
   var flatpakList: seq[string]
 
+
+  proc getFlatpakSpawnPath(): string =
+    let found = findExe("flatpak-spawn")
+    if found != "":
+      return found
+    # Fallback: standard location in Freedesktop runtime
+    if fileExists("/usr/bin/flatpak-spawn"):
+      return "/usr/bin/flatpak-spawn"
+    if fileExists("/app/bin/flatpak-spawn"):
+      return "/app/bin/flatpak-spawn"
+    raise newException(OSError, "flatpak-spawn not found")
+
   proc getFlatpakList(): seq[string] =
-    let (output, exitCode) = execCmdEx("flatpak list --app --columns=application")
+    var flatpakSpawnPath: string
+    if iAmFlatpak:
+      flatpakSpawnPath = getFlatpakSpawnPath() & " --host "
+      echo flatpakSpawnPath
+      echo execCmdEx(flatpakSpawnPath & "flatpak list --app --columns=application")
+    let (output, exitCode) = execCmdEx(flatpakSpawnPath & "flatpak list --app --columns=application")
     if exitCode == 0:
       return output.splitLines().filterIt(it != "")
     return @[]
@@ -98,12 +122,61 @@ when defined(linux):
     flatpakListCSTRING = @["Flatpak not found!"]
     isFlatpak = false
 
-  #proc amIFlatpak(): bool =
-    #getEnv("container") == "flatpak" or
-    #existsEnv("FLATPAK_ID")
-
 else:
-  var isFlatpak*: bool = false
+  isFlatpak = false
+
+
+
+proc getLatestAppVersion*() {.gcsafe.} =
+  {.cast(gcsafe).}:
+    updateInfo = @[]
+  latestVersion = 0
+  var cmd: string = ""
+
+  var powershellCmd = "powershell -NoProfile -Command \"(Invoke-WebRequest -Uri 'https://api.github.com/repos/muchobliged/SimpleDoomLauncher/releases/latest' -UseBasicParsing).Content\""
+  var curlCmd = "curl -sL -H \"User-Agent: Nim\" -H \"Accept: application/vnd.github+json\" https://api.github.com/repos/muchobliged/SimpleDoomLauncher/releases/latest"
+
+  when defined(linux):
+    if iAmFlatpak:
+      showUpdateModal = false
+      return
+  when defined(windows):
+    if findExe("curl") == "":
+      cmd = powershellCmd
+    else:
+      cmd = curlCmd
+  else:
+    cmd = curlCmd
+
+  let (jsonResponse, exitCode) = execCmdEx(cmd, options = {poDaemon})
+  if exitCode == 0 and jsonResponse.strip() != "":
+    try:
+      let data = parseJson(jsonResponse)
+
+      if data.hasKey("tag_name"):
+        latestVersion = parseFloat(data["tag_name"].getStr().strip()[1 .. ^1])
+      else:
+        latestVersion = 0
+
+      {.cast(gcsafe).}:
+        if data.hasKey("body"):
+          updateInfo = data["body"].getStr().replace("- ", "").split("\r\n")
+
+    except:
+      latestVersion = 0
+  else:
+    latestVersion = 0
+
+  if latestVersion > version:
+    showUpdateModal = true
+
+
+proc openGitHub*() =
+  var url = "https://github.com/muchobliged/SimpleDoomLauncher/releases/latest"
+  when defined(linux):
+      discard execProcess("xdg-open " & quoteShell(url))
+  elif defined(windows):
+    discard startProcess("explorer.exe", args = [quoteShell(url)], options = {poDaemon})
 
 
 proc loadZDL*(p: string) =
@@ -131,12 +204,12 @@ proc ifExtensionCorrect*(path: string): bool =
   else:
     return false
 
-proc doPortable(portExec: string): StringTableRef =
+proc doPortable(portIndx: int, portExec: string): StringTableRef =
   var env = newStringTable(modeCaseSensitive)
   var homevar = $portExec & ".home"
   for key, value in envPairs():
     env[key] = value
-  if state.doPortable:
+  if state.ports[portIndx].doPortable:
     if not dirExists(homevar):
       createDir(homevar)
     when defined(linux):
@@ -180,49 +253,77 @@ proc setArgs(portIndx: int, confIndx: int): seq[seq[string]] =
     #echo @[preCommands, args]
     result = @[preCommands, args]
 
+
 proc runPort*(portIndx: int, confIndx: int) =
     var doFlatpak: bool = false
     var portExec = state.ports[portIndx].path
-    when defined(linux):
-      if portExec.startsWith("%#%!"):
-        doFlatpak = true
-        portExec = portExec.split('!', 1)[1]
-
     var runArgs = setArgs(portIndx, confIndx)
-    if not doFlatpak:
+
+    when defined(windows):
       if fileExists(portExec):
         let process = startProcess(
             command = portExec,
             workingDir = splitFile(portExec).dir,
             args = runArgs[0] & runArgs[1],
-            env = doPortable(portExec),
+            env = doPortable(portIndx, portExec),
             options = {poParentStreams}
         )
-    else:
-      when defined(linux):
+
+    when defined(linux):
+      var launchComm: string = ""
+      var launchFromFlatpak: seq[string] = @[]
+
+      if portExec.startsWith("%#%!"):
+        doFlatpak = true
+        portExec = portExec.split('!', 1)[1]
+
+      launchComm = portExec
+
+
+      if not doFlatpak:
+        if iAmFlatpak:
+          launchComm = getFlatpakSpawnPath()
+          launchFromFlatpak = @["--host", portExec]
+
+        if fileExists(portExec):
+          let process = startProcess(
+              command = launchComm,
+              workingDir = splitFile(portExec).dir,
+              args = launchFromFlatpak & runArgs[0] & runArgs[1],
+              env = doPortable(portIndx, portExec),
+              options = {poParentStreams}
+          )
+      else:
+        var flatpakPath: string
+        var flatpakArgs: seq[string] = @[]
         var iwad = state.ports[portIndx].configs[confIndx].iwad
         var pwads = state.ports[portIndx].configs[confIndx].pwads
         var wadsDirs: seq[string] = @[]            # directories with wads, to give flatpak port permission to access
+
         wadsDirs.add(splitFile($iwad).dir)
         for i in 0 .. pwads.high:
           wadsDirs.add(splitFile(pwads[i]).dir)
         wadsDirs = wadsDirs.deduplicate()
 
-        var flatpakArgs: seq[string] = @["run"]    #"--socket=x11", "--nosocket=wayland"
+
+        if iAmFlatpak:
+          flatpakPath = getFlatpakSpawnPath()
+          flatpakArgs.add("--host")
+          flatpakArgs.add("flatpak")
+        else:
+          flatpakPath = findExe("flatpak")
+
+        flatpakArgs.add("run")
         flatpakArgs.add(runArgs[0])
         for i in 0 .. wadsDirs.high:
           flatpakArgs.add("--filesystem=" & wadsDirs[i])      #give flatpak port permission to access directories with wads
         flatpakArgs.add($portExec)
         flatpakArgs.add(runArgs[1])
-        let flatpakPath = findExe("flatpak")
-        #echo $flatpakArgs
         let process = startProcess(
             command = flatpakPath,
             args = flatpakArgs,
             options = {poParentStreams}
         )
-      else:
-        discard
 
 
 proc walkSelectedDir*(path: string, ext: seq[string]): seq[string] =
@@ -258,47 +359,81 @@ proc deleteConf*(portIndx: int, confIndx: int) =
   state.ports[portIndx].configs.delete(confIndx)
 
 proc deletePort*(indx: int) =
-  if indx > 0:
+  if indx == 0:
+    state.selectedPort = 0
+  else:
     state.selectedPort = indx - 1
   state.ports.delete(indx)
+
 
 proc isExecutable*(filename: string): bool =
   if fileExists(filename):
     when defined(windows):
-      if splitFile(filename).ext == ".exe":
-        return true
-    else:             # maybe need to prohibit .exe?
-      let filePermissions = getFilePermissions filename
-      fpUserExec in filePermissions and
-        fpGroupExec in filePermissions and
-          fpOthersExec in filePermissions
+      if splitFile(filename).ext == ".exe": return true
+    else:
+      var f = openFileStream(filename, fmRead)
+      defer: f.close()
+      let magic = f.readStr(4)   # reads up to 4 bytes as a string
+      if magic.len < 4: return false  # file too small
+      if magic.startsWith("#!"): return true
+      if magic == "\x7FELF": return true
+      return false
   else:
     return false
 
+proc getConfigPath(): string =
+  when defined(windows):
+    return splitFile(getAppFilename()).dir
+  when defined(linux):
+    if iAmFlatpak:
+      return getConfigDir() & appName
+    else:
+      let appImageEnv = getEnv("APPIMAGE")
+      if appImageEnv != "":
+        return splitFile(appImageEnv).dir
+      else:
+        return splitFile(getAppFilename()).dir
+
+proc exportConfig*(cfg: PortConfig, path: string) =
+  let jsonNode = cfg.toJson()
+  writeFile(path, jsonNode.pretty())
+
+proc importConfig*(path: string): PortConfig =
+  if fileExists(path):
+    try:
+      let jsonString = readFile(path)
+      let jsonNode = parseJson(jsonString)
+      result = jsonNode.jsonTo(PortConfig, loadOptions)
+    except:
+      echo "Config file is broken!"
+
 proc saveConfig*() =
   let jsonNode = state.toJson()
-  writeFile(configPath & "/config.json", jsonNode.pretty())
+  writeFile(configPath & "/config.sdl", jsonNode.pretty())
+  #when defined(windows):
+    #var path = configPath & "/config.sdl"
+    #let res = execCmdEx("attrib +h " & quoteShell(path))
 
 proc loadConfig*(): ProgramState =
-  if not fileExists(configPath & "/config.json"):
-    if not dirExists(configPath):
-      createDir(configPath)
+  if not fileExists(configPath & "/config.sdl"):
     isFirstLaunch = true
     return ProgramState()
   else:
     isFirstLaunch = false
 
-  let jsonString = readFile(configPath & "/config.json")
-  let jsonNode = parseJson(jsonString)
-  result = jsonNode.jsonTo(ProgramState, loadOptions)
+  try:
+    let jsonString = readFile(configPath & "/config.sdl")
+    let jsonNode = parseJson(jsonString)
+    result = jsonNode.jsonTo(ProgramState, loadOptions)
+  except:
+    echo "Config file is broken!"
+    isFirstLaunch = true
+    return ProgramState()
 
-
-configPath = getConfigDir() & appName
-#echo configPath
+configPath = getConfigPath()
 state = loadConfig()
 
 if state.defaultIWADDirectory.len <= 0 or state.defaultPWADDirectory.len <= 0:
   isFirstLaunch = true
-
 #systemFont = getDefaultSystemFontPath()
 

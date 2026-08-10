@@ -1,6 +1,6 @@
 # Package
 
-version       = "1.1"
+version       = "1.2"
 author        = "much obliged"
 description   = "Just a simple Doom launcher"
 license       = "MIT"

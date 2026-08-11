@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=Simple Doom Launcher
+Comment=Just a simple Doom launcher
+Exec=SimpleDoomLauncher
+Icon=io.github.muchobliged.SimpleDoomLauncher
+Categories=Game;

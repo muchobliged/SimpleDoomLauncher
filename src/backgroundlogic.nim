@@ -107,8 +107,8 @@ when defined(linux):
     var flatpakSpawnPath: string
     if iAmFlatpak:
       flatpakSpawnPath = getFlatpakSpawnPath() & " --host "
-      echo flatpakSpawnPath
-      echo execCmdEx(flatpakSpawnPath & "flatpak list --app --columns=application")
+      #echo flatpakSpawnPath
+      #echo execCmdEx(flatpakSpawnPath & "flatpak list --app --columns=application")
     let (output, exitCode) = execCmdEx(flatpakSpawnPath & "flatpak list --app --columns=application")
     if exitCode == 0:
       return output.splitLines().filterIt(it != "")
@@ -386,7 +386,7 @@ proc getConfigPath(): string =
     return splitFile(getAppFilename()).dir
   when defined(linux):
     if iAmFlatpak:
-      return getConfigDir() & appName
+      return getConfigDir()
     else:
       let appImageEnv = getEnv("APPIMAGE")
       if appImageEnv != "":

@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>org.muchobliged.SimpleDoomLauncher</id>
+
+  <name>Simple Doom Launcher</name>
+  <summary>Just a simple Doom launcher</summary>
+
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+
+  <developer id="org.muchobliged">
+    <name>much obliged</name>
+  </developer>
+
+  <description>
+    <p>This is just a simple Doom launcher:</p>
+    <ul>
+      <li>manage and run locally installed Doom ports</li>
+      <li>select IWADs and PWADs to launch with</li>
+      <li>pass custom arguments (both program and port specific)</li>
+      <li>create multiple configs for different tasks</li>
+      <li>run flatpak ports</li>
+    </ul>
+  </description>
+
+  <icon type="stock">org.muchobliged.SimpleDoomLauncher</icon>
+
+  <content_rating type="oars-1.1" />
+
+  <url type="homepage">https://github.com/muchobliged/SimpleDoomLauncher</url>
+  <url type="bugtracker">https://github.com/muchobliged/SimpleDoomLauncher/issues</url>
+  <url type="help">https://github.com/muchobliged/SimpleDoomLauncher</url>
+
+  <launchable type="desktop-id">org.muchobliged.SimpleDoomLauncher.desktop</launchable>
+
+  <screenshots>
+    <screenshot type="default">
+      <image>https://raw.githubusercontent.com/muchobliged/simpledoomlauncher/main/assets/screenshots/SDL.png</image>
+      <caption>Screenshot of the main window</caption>
+    </screenshot>
+  </screenshots>
+
+  <provides>
+    <binary>SimpleDoomLauncher</binary>
+  </provides>
+
+  <releases>
+    <release version="1.2" date="2026-08-10">
+      <description>
+        <p>Config file is now created near the app executable</p>
+        <p>"Launch as portable" option is now per-port</p>
+        <p>Added option to import/export port configs</p>
+        <p>Added option to check for updates on launch</p>
+        <p>Fixed several bugs</p>
+        <p>Linux: freeze without KDialog seems to be fixed</p>
+      </description>
+    </release>
+  </releases>
+</component>

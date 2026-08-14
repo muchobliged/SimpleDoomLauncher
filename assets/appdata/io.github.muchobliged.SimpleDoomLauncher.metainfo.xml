@@ -45,6 +45,14 @@
   </provides>
 
   <releases>
+    <release version="1.21" date="2026-08-14">
+      <description>
+        <p>Fixed and improved update check method</p>
+        <p>Yes/No buttons are swapped for convenience</p>
+        <p>Added alphabetical sort to WADs lists to deal with rare issue</p>
+        <p>Slightly improved performance</p>
+      </description>
+    </release>
     <release version="1.2" date="2026-08-10">
       <description>
         <p>Config file is now created near the app executable</p>

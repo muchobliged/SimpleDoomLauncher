@@ -1,4 +1,4 @@
-import std/[jsonutils, json, os, osproc, strutils, sequtils, envvars, strtabs, streams]
+import std/[jsonutils, json, os, osproc, strutils, sequtils, envvars, strtabs, streams, algorithm]
 
 type
   SourcePort* = object
@@ -30,9 +30,8 @@ type
 
 let appName: string = "MO_SimpleDoomLauncher"
 
-var version*: float = 1.2
+var version*: float = 1.21
 var latestVersion*: float = 0
-var updateInfo*: seq[string] = @[]
 var showUpdateModal*: bool = false
 
 var configPath: string
@@ -107,8 +106,6 @@ when defined(linux):
     var flatpakSpawnPath: string
     if iAmFlatpak:
       flatpakSpawnPath = getFlatpakSpawnPath() & " --host "
-      #echo flatpakSpawnPath
-      #echo execCmdEx(flatpakSpawnPath & "flatpak list --app --columns=application")
     let (output, exitCode) = execCmdEx(flatpakSpawnPath & "flatpak list --app --columns=application")
     if exitCode == 0:
       return output.splitLines().filterIt(it != "")
@@ -125,47 +122,53 @@ when defined(linux):
 else:
   isFlatpak = false
 
-
+proc canDoUpdates(): int = # 0 - no, 1 - curl, 2 - powershell
+  when defined(linux):
+    if iAmFlatpak or findExe("curl") == "":
+      return 0
+    else:
+      return 1
+  elif defined(windows):
+    if findExe("curl") != "":
+      return 1
+    elif findExe("powershell") != "":
+      return 2
+    else:
+      return 0
 
 proc getLatestAppVersion*() {.gcsafe.} =
-  {.cast(gcsafe).}:
-    updateInfo = @[]
   latestVersion = 0
   var cmd: string = ""
 
   var powershellCmd = "powershell -NoProfile -Command \"(Invoke-WebRequest -Uri 'https://api.github.com/repos/muchobliged/SimpleDoomLauncher/releases/latest' -UseBasicParsing).Content\""
   var curlCmd = "curl -sL -H \"User-Agent: Nim\" -H \"Accept: application/vnd.github+json\" https://api.github.com/repos/muchobliged/SimpleDoomLauncher/releases/latest"
 
-  when defined(linux):
-    if iAmFlatpak:
-      showUpdateModal = false
-      return
-  when defined(windows):
-    if findExe("curl") == "":
+  case canDoUpdates():
+    of 1:
+      cmd = curlCmd
+    of 2:
       cmd = powershellCmd
     else:
-      cmd = curlCmd
-  else:
-    cmd = curlCmd
+      latestVersion = 0
+      return
+  try:
+    let (jsonResponse, exitCode) = execCmdEx(cmd, options = {poUsePath, poDaemon})
 
-  let (jsonResponse, exitCode) = execCmdEx(cmd, options = {poDaemon})
-  if exitCode == 0 and jsonResponse.strip() != "":
-    try:
+    if exitCode == 0 and jsonResponse.strip() != "":
       let data = parseJson(jsonResponse)
 
       if data.hasKey("tag_name"):
         latestVersion = parseFloat(data["tag_name"].getStr().strip()[1 .. ^1])
       else:
         latestVersion = 0
+        return
 
-      {.cast(gcsafe).}:
-        if data.hasKey("body"):
-          updateInfo = data["body"].getStr().replace("- ", "").split("\r\n")
-
-    except:
+    else:
       latestVersion = 0
-  else:
+      return
+  except:
     latestVersion = 0
+    return
 
   if latestVersion > version:
     showUpdateModal = true
@@ -207,6 +210,7 @@ proc ifExtensionCorrect*(path: string): bool =
 proc doPortable(portIndx: int, portExec: string): StringTableRef =
   var env = newStringTable(modeCaseSensitive)
   var homevar = $portExec & ".home"
+
   for key, value in envPairs():
     env[key] = value
   if state.ports[portIndx].doPortable:
@@ -225,9 +229,7 @@ proc setArgs(portIndx: int, confIndx: int): seq[seq[string]] =
     var postCommands: seq[string]
     var iwad = state.ports[portIndx].configs[confIndx].iwad
     var pwads = state.ports[portIndx].configs[confIndx].pwads
-    #var commands = strutils.splitWhitespace(state.ports[portIndx].configs[confIndx].commands)
     var commands = state.ports[portIndx].configs[confIndx].commands.split(';', 1)
-    #echo $commands & "commands"
     var portIwadBehav = state.ports[portIndx].iwadBehav
 
     if commands.len > 1:
@@ -250,7 +252,6 @@ proc setArgs(portIndx: int, confIndx: int): seq[seq[string]] =
       args.add(pwads[i])
 
     args.add(postCommands)
-    #echo @[preCommands, args]
     result = @[preCommands, args]
 
 
@@ -261,13 +262,16 @@ proc runPort*(portIndx: int, confIndx: int) =
 
     when defined(windows):
       if fileExists(portExec):
-        let process = startProcess(
-            command = portExec,
-            workingDir = splitFile(portExec).dir,
-            args = runArgs[0] & runArgs[1],
-            env = doPortable(portIndx, portExec),
-            options = {poParentStreams}
-        )
+        try:
+          let process = startProcess(
+              command = portExec,
+              workingDir = splitFile(portExec).dir,
+              args = runArgs[0] & runArgs[1],
+              env = doPortable(portIndx, portExec),
+              options = {poParentStreams}
+          )
+        except:
+          discard
 
     when defined(linux):
       var launchComm: string = ""
@@ -286,13 +290,16 @@ proc runPort*(portIndx: int, confIndx: int) =
           launchFromFlatpak = @["--host", portExec]
 
         if fileExists(portExec):
-          let process = startProcess(
-              command = launchComm,
-              workingDir = splitFile(portExec).dir,
-              args = launchFromFlatpak & runArgs[0] & runArgs[1],
-              env = doPortable(portIndx, portExec),
-              options = {poParentStreams}
-          )
+          try:
+            let process = startProcess(
+                command = launchComm,
+                workingDir = splitFile(portExec).dir,
+                args = launchFromFlatpak & runArgs[0] & runArgs[1],
+                env = doPortable(portIndx, portExec),
+                options = {poParentStreams}
+            )
+          except:
+            discard
       else:
         var flatpakPath: string
         var flatpakArgs: seq[string] = @[]
@@ -319,11 +326,14 @@ proc runPort*(portIndx: int, confIndx: int) =
           flatpakArgs.add("--filesystem=" & wadsDirs[i])      #give flatpak port permission to access directories with wads
         flatpakArgs.add($portExec)
         flatpakArgs.add(runArgs[1])
-        let process = startProcess(
-            command = flatpakPath,
-            args = flatpakArgs,
-            options = {poParentStreams}
-        )
+        try:
+          let process = startProcess(
+              command = flatpakPath,
+              args = flatpakArgs,
+              options = {poParentStreams}
+          )
+        except:
+          discard
 
 
 proc walkSelectedDir*(path: string, ext: seq[string]): seq[string] =
@@ -334,7 +344,7 @@ proc walkSelectedDir*(path: string, ext: seq[string]): seq[string] =
         if filePath.toLower().endsWith(ext[p]):
           result.add(filePath)
           break
-
+  result = result.sorted(cmpIgnoreCase)
 
 proc fixFold*(path: string): string =
   var p = path
@@ -410,9 +420,6 @@ proc importConfig*(path: string): PortConfig =
 proc saveConfig*() =
   let jsonNode = state.toJson()
   writeFile(configPath & "/config.sdl", jsonNode.pretty())
-  #when defined(windows):
-    #var path = configPath & "/config.sdl"
-    #let res = execCmdEx("attrib +h " & quoteShell(path))
 
 proc loadConfig*(): ProgramState =
   if not fileExists(configPath & "/config.sdl"):

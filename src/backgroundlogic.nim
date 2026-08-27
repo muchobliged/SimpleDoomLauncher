@@ -30,7 +30,7 @@ type
 
 let appName: string = "MO_SimpleDoomLauncher"
 
-var version*: float = 1.21
+var version*: float = 1.22
 var latestVersion*: float = 0
 var showUpdateModal*: bool = false
 
@@ -335,16 +335,36 @@ proc runPort*(portIndx: int, confIndx: int) =
         except:
           discard
 
+proc changeDirNameWithBrackets*(str: string): string =
+  let totalWidth = 18
+  let innerWidth = totalWidth - 2
+
+  var text = str
+  if text.len > innerWidth:
+    text = text[0 ..< innerWidth]
+
+  let totalPadding = innerWidth - text.len
+  let rightPadding = totalPadding div 2
+  let leftPadding = totalPadding - rightPadding
+
+  let innerText = text.alignLeft(text.len + rightPadding).align(innerWidth)
+  return "[" & innerText & "]"
+
 
 proc walkSelectedDir*(path: string, ext: seq[string]): seq[string] =
+  var files: seq[string] = @[]
+  var folders: seq[string] = @[]
   result = @[]
   for kind, filePath in walkDir(path):
     if kind == pcFile:
       for p in 0 .. ext.high:
         if filePath.toLower().endsWith(ext[p]):
-          result.add(filePath)
+          files.add(filePath)
           break
-  result = result.sorted(cmpIgnoreCase)
+    elif kind == pcDir:
+      folders.add(filePath & " - i am folder!@#@!")
+  result.add(folders.sorted(cmpIgnoreCase))
+  result.add(files.sorted(cmpIgnoreCase))
 
 proc fixFold*(path: string): string =
   var p = path

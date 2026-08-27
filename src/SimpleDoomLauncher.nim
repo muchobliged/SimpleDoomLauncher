@@ -210,12 +210,16 @@ proc main() =
   var shouldPasteConfig: bool = false
   var shouldOpenSettings: bool = false
   var wasFocused: bool = true
+  var customPWADDirectory: string = ""
 
 
   proc updateWADsLists() =
     if state.ports.len > 0:
       iwadList = walkSelectedDir(state.defaultIWADDirectory, if state.ports[state.selectedPort].allowExtraFormats: allExtensions else: @[".wad"])
-      pwadList = walkSelectedDir(state.defaultPWADDirectory, if state.ports[state.selectedPort].allowExtraFormats: allExtensions else: @[".wad"])
+      if customPWADDirectory.len > 0:
+        pwadList = walkSelectedDir(customPWADDirectory, if state.ports[state.selectedPort].allowExtraFormats: allExtensions else: @[".wad"])
+      else:
+        pwadList = walkSelectedDir(state.defaultPWADDirectory, if state.ports[state.selectedPort].allowExtraFormats: allExtensions else: @[".wad"])
 
   updateWADsLists()
 
@@ -1241,6 +1245,8 @@ proc main() =
         var shouldRemovePWAD = -1
         var shouldAddPWAD = -1
         var customWAD = ""
+        var shouldGoUpPWADDir = false
+        var shouldGoCustomPWADDir = false
         igSetCursorPosX(availRegTabs.x/2 - (buttSize + butt1Size/1.5f + style.itemSpacing.x) / 2)
         igBeginListBox("##PWADs selected ListBox", ImVec2(x: buttSize, y: itemHeight * 8))
         for j in 0 .. conf.pwads.high:
@@ -1282,18 +1288,40 @@ proc main() =
         igSameLine()
         igBeginListBox("##PWADs ListBox", ImVec2(x: butt1Size/1.5f, y: itemHeight * 8))
         if pwadList.len > 0:
-          for j in 0 .. pwadList.high:
-            var canAddPwad: bool = true
-            for k in 0 .. conf.pwads.high:
-              if pwadList[j] == conf.pwads[k]:
-                canAddPwad = false
-                break
-            if canAddPwad:
-              igPushID(pwadList[j])
-              if igSelectable(extractFilename(pwadList[j])):
-                shouldAddPWAD = j
+          var suffix = " - i am folder!@#@!"
 
+          if customPWADDirectory.len > 0:
+            if igSelectable("...", false):
+              shouldGoUpPWADDir = true
+            igSeparator()
+
+          for j in 0 .. pwadList.high:
+
+            if pwadList[j].toLower().endsWith(suffix):
+              #var dirName = extractFilename(pwadList[j])[0 .. ^(suffix.len + 1)]
+              igPushID(pwadList[j])
+              if igSelectable(changeDirNameWithBrackets(extractFilename(pwadList[j])[0 .. ^(suffix.len + 1)])):
+                shouldGoCustomPWADDir = true
+                customPWADDirectory = pwadList[j][0 .. ^(suffix.len + 1)]
               igPopID()
+            else:
+              var canAddPwad: bool = true
+              for k in 0 .. conf.pwads.high:
+                if pwadList[j] == conf.pwads[k]:
+                  canAddPwad = false
+                  break
+              if canAddPwad:
+                igPushID(pwadList[j])
+                if igSelectable(extractFilename(pwadList[j])):
+                  shouldAddPWAD = j
+
+                igPopID()
+        elif customPWADDirectory.len > 0:
+          if igSelectable("...", false):
+            shouldGoUpPWADDir = true
+          igSeparator()
+          discard igSelectable(trans.pwadsnotfound, false)
+          igSeparator()
         else:
           igSeparator()
           if igSelectable(trans.pwadsnotfound, false):
@@ -1346,6 +1374,19 @@ proc main() =
           conf.pwads.add(pwadList[shouldAddPWAD])
         if customWAD != "":
           conf.pwads.add(customWAD)
+        if shouldGoUpPWADDir:
+          shouldGoUpPWADDir = false
+          if customPWADDirectory.len > 0 and dirExists(customPWADDirectory.parentDir()) and customPWADDirectory.parentDir() != state.defaultPWADDirectory:
+            customPWADDirectory = customPWADDirectory.parentDir()
+          else:
+            customPWADDirectory = ""
+          updateWADsLists()
+        if shouldGoCustomPWADDir:
+          shouldGoCustomPWADDir = false
+          if customPWADDirectory.len <= 0 or not dirExists(customPWADDirectory):
+            customPWADDirectory = ""
+          updateWADsLists()
+
         igEndChild()
 
         style.selectableTextAlign = ImVec2(x: 0, y: 0.5f)

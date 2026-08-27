@@ -45,22 +45,9 @@
   </provides>
 
   <releases>
-    <release version="1.21" date="2026-08-14">
+    <release version="1.22" date="2026-08-27">
       <description>
-        <p>Fixed and improved update check method</p>
-        <p>Yes/No buttons are swapped for convenience</p>
-        <p>Added alphabetical sort to WADs lists to deal with rare issue</p>
-        <p>Slightly improved performance</p>
-      </description>
-    </release>
-    <release version="1.2" date="2026-08-10">
-      <description>
-        <p>Config file is now created near the app executable</p>
-        <p>"Launch as portable" option is now per-port</p>
-        <p>Added option to import/export port configs</p>
-        <p>Added option to check for updates on launch</p>
-        <p>Fixed several bugs</p>
-        <p>Linux: freeze without KDialog seems to be fixed</p>
+        <p>Added support for PWADs subdirectories</p>
       </description>
     </release>
   </releases>

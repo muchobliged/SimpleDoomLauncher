@@ -53,8 +53,10 @@ type
     importCFG*: string
     exportCFG*: string
     checkForUpdates*: string
-    checkForUpdatesFAQ*: string
+    checkForUpdatesFAQ*: seq[string]
     updateFound*: seq[string]
+    relativePaths*: string
+    relativePathsFAQ*: seq[string]
 
 var trans*: Translation
 
@@ -104,7 +106,7 @@ proc setLang*(lan: int = 0) =
         pwadsnotfound: "PWAD`ы не найдены!",
         selectproperpwadsdir: "Выберите корректную директорию с PWAD`ами в настройках",
         selectproperiwadsdir: "Выберите корректную директорию с IWAD`ами в настройках",
-        tips: @["Несколько советов:", "- ПКМ по выбранному порту для настройки", "", "- ПКМ по выбранному конфигу, чтобы сохранить,", "скопировать, переименовать или удалить его", "", "- можно менять порядок портов и конфигов путем", "перетаскивания с зажатой ЛКМ", "", "- добавленные PWAD`ы можно перетаскивать, это", "изменит порядок запуска", "", "- добавленные PWAD`ы можно удалить, нажав ПКМ", "", "- для быстрого добавления порта вы можете", "перетащить исполняемый файл в левую часть окна", "", "- добавить внешний PWAD можно двумя способами:", "нажав на соответствующую кнопку или перетащив", "файл в правую часть окна", "", "- импортировать .zdl можно двумя способами:", "ПКМ по кнопке добавления конфигурации или", "перетащив файл в правую часть окна"],
+        tips: @["Несколько советов:", "- ПКМ по выбранному порту для настройки", "", "- ПКМ по выбранному конфигу, чтобы сохранить,", "скопировать, переименовать или удалить его", "", "- можно менять порядок портов, конфигов и", "добавленных PWAD`ов путем перетаскивания с", "зажатой ЛКМ", "", "- добавленные PWAD`ы можно удалить, нажав ПКМ", "", "- ПКМ по элементу в списке PWAD`ов откроет", "соответствующий txt файл, при его наличии", "", "- для быстрого добавления порта вы можете", "перетащить исполняемый файл в левую часть окна", "", "- добавить внешний PWAD можно двумя способами:", "нажав на соответствующую кнопку или перетащив", "файл в правую часть окна", "", "- импортировать .zdl можно двумя способами:", "ПКМ по кнопке добавления конфигурации или", "перетащив файл в правую часть окна"],
         removeportWarning: @["Удалить выбранный порт и все его конфигурации?", "Вы уверены?"],
         removeconfigWarning: @["Удалить выбранную конфигурацию?", "Вы уверены?"],
         addzdlconfig: "Добавить ZDL",
@@ -115,8 +117,10 @@ proc setLang*(lan: int = 0) =
         importCFG: "Импортировать",
         exportCFG: "Сохранить",
         checkForUpdates: "Проверять обновления:",
-        checkForUpdatesFAQ: "Проверять обновления при запуске - уведомит, если доступна новая версия",
-        updateFound: @["Доступна новая версия!", "Хотите обновить?"]
+        checkForUpdatesFAQ: @["Проверять обновления при запуске", "", "Уведомит, если доступна новая версия"],
+        updateFound: @["Доступна новая версия!", "Хотите обновить?"],
+        relativePaths: "Относительные пути:  ",
+        relativePathsFAQ: @["Сохранять пути относительно лаунчера", "", "Полезно, если лаунчер используется портативно", "", "Учитываются только пути ниже или наравне с", "расположением лаунчера"]
         )
     else:
       trans = Translation(
@@ -159,7 +163,7 @@ proc setLang*(lan: int = 0) =
         pwadsnotfound: "PWADs not found!",
         selectproperpwadsdir: "Select proper PWADs directory in settings",
         selectproperiwadsdir: "Select proper IWADs directory in settings",
-        tips: @["Some tips:", "- right click selected port to configure it", "", "- right click selected config to export, copy,", "rename or delete it", "", "- ports and configs are rearrangeable via", "holding left mouse button and dragging", "", "- items in the selected PWADs area are also", "rearrangeable - it changes order of loading", "", "- in the selected PWADs area press right mouse", "button to remove PWAD from the list", "", "- you can drag-n-drop executable into the", "left side of the main window", "", "- you can add extra PWAD that is not in the", "PWADs folder by either drag-n-dropping the file", "into the right side of the window or by pressing", "corresponding button", "", "- you can add .zdl config by either right click", "the add config button or by dragging", "the file into the right side of the window"],
+        tips: @["Some tips:", "- right click selected port to configure it", "", "- right click selected config to export, copy,", "rename or delete it", "", "- ports, configs and selected PWADs can be", "rearranged by holding and dragging left mouse", "button", "", "- in the selected PWADs area press right mouse", "button to remove PWAD from the list", "", "- right click the element in PWADs list to", "open corresponding txt file if it is present", "", "- you can drag-n-drop executable into the", "left side of the main window", "", "- you can add extra PWAD that is not in the", "PWADs folder by either drag-n-dropping the file", "into the right side of the window or by pressing", "corresponding button", "", "- you can add .zdl config by either right click", "the add config button or by dragging", "the file into the right side of the window"],
         removeportWarning: @["Remove selected port and all related configs?", "Are you sure?"],
         removeconfigWarning: @["Remove selected config?", "Are you sure?"],
         addzdlconfig: "Import ZDL",
@@ -170,6 +174,8 @@ proc setLang*(lan: int = 0) =
         importCFG: "Import",
         exportCFG: "Export",
         checkForUpdates: "Check for updates:",
-        checkForUpdatesFAQ: "Check for updates on startup - will notify if there is newer version",
-        updateFound: @["New version available!", "Do you want to update?"]
+        checkForUpdatesFAQ: @["Check for updates on startup", "", "Will notify if there is newer version"],
+        updateFound: @["New version available!", "Do you want to update?"],
+        relativePaths: "Relative paths:   ",
+        relativePathsFAQ: @["Save paths relative to the launcher", "", "Useful if the launcher is used portable", "", "Only paths that are lower or at the same", "level as the launcher will be used"]
         )

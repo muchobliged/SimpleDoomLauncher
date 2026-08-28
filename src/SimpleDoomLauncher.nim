@@ -4,8 +4,7 @@ import nimgl/[opengl, glfw], nimgl/imgui, nimgl/imgui/[impl_opengl, impl_glfw]
 import tinydialogs
 
 
-#TODO     Flatpak build?            Compile to C?
-
+#TODO     Flatpak build? (flathub said no, so all flatpak related code is now redundant)     Compile to C? (why?)
 
 when defined(windows):
   proc glfwGetWin32Window(window: GLFWWindow): pointer {.importc: "glfwGetWin32Window".}
@@ -45,16 +44,19 @@ proc fpsLimit(win: GLFWWindow) =
 
 
 
+proc openViaUserApp(path: string) =
+  when defined(linux):
+    discard execProcess("xdg-open " & quoteShell(path))
+  elif defined(windows):
+    discard startProcess("explorer.exe", args = [quoteShell(path)], options = {poDaemon})
+
 
 proc hyperlink(text, url: string) =
   igText(text)
   if igIsItemHovered():
     igSetMouseCursor(ImGuiMouseCursor.Hand)
   if igIsItemClicked(ImGuiMouseButton.Left):
-    when defined(linux):
-      discard execProcess("xdg-open " & quoteShell(url))
-    elif defined(windows):
-      discard startProcess("explorer.exe", args = [quoteShell(url)], options = {poDaemon})
+    openViaUserApp(url)
 
 
 
@@ -185,6 +187,7 @@ proc main() =
 
   var iwadList: seq[string]
   var pwadList: seq[string]
+  var txtList: seq[string]
   var currentText: string
   var canAddPort: bool = false
   var wantToDeletePort: bool = false
@@ -195,6 +198,7 @@ proc main() =
   var doPortable: bool = true
   var closeOnLaunch: bool = state.closeOnLaunch
   var checkForUpdates: bool = state.checkForUpdates
+  var relativePaths: bool = state.relativePaths
   var didCheckForUpdates: bool = false
   var selectedFoldIWAD: string = ""
   var selectedFoldPWAD: string = ""
@@ -215,11 +219,13 @@ proc main() =
 
   proc updateWADsLists() =
     if state.ports.len > 0:
-      iwadList = walkSelectedDir(state.defaultIWADDirectory, if state.ports[state.selectedPort].allowExtraFormats: allExtensions else: @[".wad"])
+      iwadList = walkSelectedDir(state.defaultIWADDirectory, if state.ports[state.selectedPort].allowExtraFormats: allExtensions else: @[".wad"], true)
       if customPWADDirectory.len > 0:
         pwadList = walkSelectedDir(customPWADDirectory, if state.ports[state.selectedPort].allowExtraFormats: allExtensions else: @[".wad"])
+        txtList = findTXT(customPWADDirectory, pwadList)
       else:
         pwadList = walkSelectedDir(state.defaultPWADDirectory, if state.ports[state.selectedPort].allowExtraFormats: allExtensions else: @[".wad"])
+        txtList = findTXT(state.defaultPWADDirectory, pwadList)
 
   updateWADsLists()
 
@@ -543,9 +549,10 @@ proc main() =
       igOpenPopup("###Settings")
       shouldOpenSettings = false
       showSettingsModal = true
-      checkForUpdates = state.checkForUpdates
-      closeOnLaunch = state.closeOnLaunch
       if not isFirstLaunch:
+        checkForUpdates = state.checkForUpdates
+        closeOnLaunch = state.closeOnLaunch
+        relativePaths = state.relativePaths
         showAbout = false
         if state.defaultIWADDirectory.len > 0:
           selectedFoldIWAD = state.defaultIWADDirectory
@@ -642,9 +649,24 @@ proc main() =
           igAlignTextToFramePadding()
           igText(trans.checkForUpdates)
           if igIsItemHovered():
-            igSetTooltip(trans.checkForUpdatesFAQ)
+            igBeginTooltip()
+            for it in trans.checkForUpdatesFAQ:
+              igText(it)
+            igEndTooltip()
           igSameLine()
           igCheckbox("##checkUpdates", checkForUpdates.addr)
+
+        igCalcTextSizeNonUDT(textSize.addr, trans.relativePaths & "    ", nil, false, -1.0) #idk what checkbox size is so spaces work just fine
+        igSetCursorPosX(style.windowPadding.x + availReg.x/2 - (textSize.x + style.itemSpacing.x) / 2)
+        igAlignTextToFramePadding()
+        igText(trans.relativePaths)
+        if igIsItemHovered():
+          igBeginTooltip()
+          for it in trans.relativePathsFAQ:
+            igText(it)
+          igEndTooltip()
+        igSameLine()
+        igCheckbox("##8003", relativePaths.addr)
 
         igCalcTextSizeNonUDT(textSize.addr, trans.closeonlaunch & "    ", nil, false, -1.0) #idk what checkbox size is so spaces work just fine
         igSetCursorPosX(style.windowPadding.x + availReg.x/2 - (textSize.x + style.itemSpacing.x) / 2)
@@ -653,17 +675,18 @@ proc main() =
         if igIsItemHovered():
           igSetTooltip(trans.closeonlaunchFAQ)
         igSameLine()
-        igCheckbox("##8003", closeOnLaunch.addr)
+        igCheckbox("##8004", closeOnLaunch.addr)
 
-        igText("")
+        #igText("")
         igText("")
         igBeginDisabled(selectedFoldIWAD.len <= 0 or selectedFoldPWAD.len <= 0)
         igSetCursorPosX(style.windowPadding.x + availReg.x/2 - (availReg.x/2.5f)/2)
-        if igButton(trans.save & "##8004", ImVec2(x: availReg.x/2.5f, y: itemHeight * 1.25f)):
+        if igButton(trans.save & "##8005", ImVec2(x: availReg.x/2.5f, y: itemHeight * 1.25f)):
           state.defaultIWADDirectory = selectedFoldIWAD
           state.defaultPWADDirectory = selectedFoldPWAD
           state.closeOnLaunch = closeOnLaunch
           state.checkForUpdates = checkForUpdates
+          state.relativePaths = relativePaths
           updateWADsLists()
           showSettingsModal = false
           if isFirstLaunch:
@@ -1239,7 +1262,7 @@ proc main() =
         var butt1Size = availRegTabs.x/3
         if conf.pwads.len >= 9:
           buttSize += style.scrollbarSize
-        if pwadList.len >= 10:
+        if pwadList.len >= 9:
           butt1Size += style.scrollbarSize
 
         var shouldRemovePWAD = -1
@@ -1288,7 +1311,7 @@ proc main() =
         igSameLine()
         igBeginListBox("##PWADs ListBox", ImVec2(x: butt1Size/1.5f, y: itemHeight * 8))
         if pwadList.len > 0:
-          var suffix = " - i am folder!@#@!"
+          var foldSuffix = " - i am folder!@#@!"
 
           if customPWADDirectory.len > 0:
             if igSelectable("...", false):
@@ -1297,23 +1320,32 @@ proc main() =
 
           for j in 0 .. pwadList.high:
 
-            if pwadList[j].toLower().endsWith(suffix):
-              #var dirName = extractFilename(pwadList[j])[0 .. ^(suffix.len + 1)]
+            if pwadList[j].toLower().endsWith(foldSuffix):
               igPushID(pwadList[j])
-              if igSelectable(changeDirNameWithBrackets(extractFilename(pwadList[j])[0 .. ^(suffix.len + 1)])):
+              if igSelectable(changeDirNameWithBrackets(extractFilename(pwadList[j])[0 .. ^(foldSuffix.len + 1)])):
                 shouldGoCustomPWADDir = true
-                customPWADDirectory = pwadList[j][0 .. ^(suffix.len + 1)]
+                customPWADDirectory = pwadList[j][0 .. ^(foldSuffix.len + 1)]
               igPopID()
             else:
               var canAddPwad: bool = true
+
               for k in 0 .. conf.pwads.high:
                 if pwadList[j] == conf.pwads[k]:
                   canAddPwad = false
                   break
+
               if canAddPwad:
                 igPushID(pwadList[j])
                 if igSelectable(extractFilename(pwadList[j])):
                   shouldAddPWAD = j
+
+                if igIsItemHovered() and txtList[j].toLower().endsWith(".txt"):
+                  igSetMouseCursor(ImGuiMouseCursor.Hand)
+
+                if igIsItemClicked(ImGuiMouseButton(1)):    #search and open .txt for WAD
+                  if txtList[j].toLower().endsWith(".txt"):
+                    if fileExists(txtList[j]):
+                      openViaUserApp(txtList[j])
 
                 igPopID()
         elif customPWADDirectory.len > 0:

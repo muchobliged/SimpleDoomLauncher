@@ -1,4 +1,6 @@
 import std/[jsonutils, json, os, osproc, strutils, sequtils, envvars, strtabs, streams, algorithm]
+from std/unicode import runeLen, runeSubstr
+
 
 type
   SourcePort* = object
@@ -26,11 +28,12 @@ type
     styleIndex*: int32 = 0
     lang*: int32 = 0
     checkForUpdates*: bool = true
+    relativePaths*: bool = false
 
 
 let appName: string = "MO_SimpleDoomLauncher"
 
-var version*: float = 1.22
+var version*: float = 1.23
 var latestVersion*: float = 0
 var showUpdateModal*: bool = false
 
@@ -340,18 +343,42 @@ proc changeDirNameWithBrackets*(str: string): string =
   let innerWidth = totalWidth - 2
 
   var text = str
-  if text.len > innerWidth:
-    text = text[0 ..< innerWidth]
+  if text.runeLen > innerWidth:
+    text = text.runeSubstr(0, innerWidth)
 
-  let totalPadding = innerWidth - text.len
+  let totalPadding = innerWidth - text.runeLen
   let rightPadding = totalPadding div 2
   let leftPadding = totalPadding - rightPadding
 
-  let innerText = text.alignLeft(text.len + rightPadding).align(innerWidth)
-  return "[" & innerText & "]"
+  let leftSpaces = " ".repeat(leftPadding)
+  let rightSpaces = " ".repeat(rightPadding)
+
+  return "[" & leftSpaces & text & rightSpaces & "]"
 
 
-proc walkSelectedDir*(path: string, ext: seq[string]): seq[string] =
+proc findTXT*(path: string, list: seq[string]): seq[string] =
+  var newList = list
+  when defined(windows):
+    for i in 0 .. newList.high:
+      let targetFilename = changeFileExt(newList[i], "txt")
+      if fileExists(targetFilename):
+        newList[i] = targetFilename
+  else:
+    var txtList: seq[string] = @[]
+    for kind, pathItem in walkDir(path):
+      if kind == pcFile:
+        if pathItem.toLower().endsWith(".txt"):
+          txtList.add(pathItem)
+    for i in 0 .. newList.high:
+      let targetFilename = changeFileExt(newList[i], "txt")
+      for j in 0 .. txtList.high:
+        if targetFilename.toLower() == txtList[j].toLower():
+          newList[i] = txtList[j]
+          break
+  return newList
+
+
+proc walkSelectedDir*(path: string, ext: seq[string], isIWAD: bool = false): seq[string] =
   var files: seq[string] = @[]
   var folders: seq[string] = @[]
   result = @[]
@@ -361,7 +388,7 @@ proc walkSelectedDir*(path: string, ext: seq[string]): seq[string] =
         if filePath.toLower().endsWith(ext[p]):
           files.add(filePath)
           break
-    elif kind == pcDir:
+    elif kind == pcDir and not isIWAD:
       folders.add(filePath & " - i am folder!@#@!")
   result.add(folders.sorted(cmpIgnoreCase))
   result.add(files.sorted(cmpIgnoreCase))
@@ -437,11 +464,44 @@ proc importConfig*(path: string): PortConfig =
     except:
       echo "Config file is broken!"
 
+
+proc makePathRelative(com: bool, str: string, appPath: string): string =
+  var searchStr = ""
+  var addStr = ""
+
+  if com:
+    searchStr = appPath
+    addStr = "!RELATIVE! - "
+  else:
+    searchStr = "!RELATIVE! - "
+    addStr = appPath
+
+  if str.startsWith(searchStr):
+    return addStr & str.split(searchStr, 1)[1]
+  else:
+    return str
+
+
+
+proc makeStateRelative(com: bool) =
+  let appPath = splitFile(getAppFilename()).dir
+  state.defaultIWADDirectory = makePathRelative(com, state.defaultIWADDirectory, appPath)
+  state.defaultPWADDirectory = makePathRelative(com, state.defaultPWADDirectory, appPath)
+
+  for i in 0 .. state.ports.high:
+    state.ports[i].path = makePathRelative(com, state.ports[i].path, appPath)
+    for j in 0 .. state.ports[i].configs.high:
+      state.ports[i].configs[j].iwad = makePathRelative(com, state.ports[i].configs[j].iwad, appPath)
+      for k in 0 .. state.ports[i].configs[j].pwads.high:
+        state.ports[i].configs[j].pwads[k] = makePathRelative(com, state.ports[i].configs[j].pwads[k], appPath)
+
+
 proc saveConfig*() =
+  makeStateRelative(state.relativePaths)
   let jsonNode = state.toJson()
   writeFile(configPath & "/config.sdl", jsonNode.pretty())
 
-proc loadConfig*(): ProgramState =
+proc loadConfig(): ProgramState =
   if not fileExists(configPath & "/config.sdl"):
     isFirstLaunch = true
     return ProgramState()
@@ -459,6 +519,7 @@ proc loadConfig*(): ProgramState =
 
 configPath = getConfigPath()
 state = loadConfig()
+makeStateRelative(false)  # make paths unrelative
 
 if state.defaultIWADDirectory.len <= 0 or state.defaultPWADDirectory.len <= 0:
   isFirstLaunch = true

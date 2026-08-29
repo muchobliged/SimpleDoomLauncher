@@ -2,7 +2,7 @@ import nimgl/imgui
 import std/sequtils
 
 
-var availStyles = @["ImGui Dark", "ImGui Light", "ImGui Classic", "Forest Green", "Sapphire", "Amethyst", "Amber Yellow", "Crimson Vesuvius", "Rose Quartz", "Cyberpunk", "Paper and Ink"]
+var availStyles = @["ImGui Dark", "ImGui Light", "ImGui Classic", "Forest Green", "Sapphire", "Amethyst", "Amber Yellow", "Crimson Vesuvius", "Rose Quartz", "Cyberpunk", "Paper and Ink", "SETUP.EXE"]
 
 var availStylesCSTRING*: seq[cstring] = availStyles.mapIt(it.cstring)
 
@@ -646,7 +646,93 @@ proc setupPaperAndInkStyle*() =
   style.colors[int(ImGuiCol.DragDropTarget)] = ImVec4(x: 0.17'f32, y: 0.34'f32, z: 0.59'f32, w: 0.90'f32)
   style.colors[int(ImGuiCol.NavHighlight)] = ImVec4(x: 0.17'f32, y: 0.34'f32, z: 0.59'f32, w: 1.00'f32)
 
+proc setupDosSetupStyle() = 
+  let style = igGetStyle()
 
+  # Properties
+  style.windowRounding = 0.0f
+  style.windowBorderSize = 1.0f
+  style.childRounding = 0.0f
+  style.childBorderSize = 1.0f
+  style.popupRounding = 0.0f
+  style.popupBorderSize = 1.0f
+  style.frameRounding = 0.0f
+  style.frameBorderSize = 1.0f
+  style.scrollbarSize = 12.0f
+  style.scrollbarRounding = 0.0f
+  style.grabRounding = 0.0f
+  style.tabRounding = 0.0f
+  style.tabBorderSize = 1.0f
+
+  # Text
+  style.colors[int(ImGuiCol.Text)] = ImVec4(x: 1.00'f32, y: 1.00'f32, z: 1.00'f32, w: 1.00'f32)
+  style.colors[int(ImGuiCol.TextDisabled)] = ImVec4(x: 0.50'f32, y: 0.50'f32, z: 0.50'f32, w: 1.00'f32)
+
+  # Backgrounds
+  style.colors[int(ImGuiCol.WindowBg)] = ImVec4(x: 0.34'f32, y: 0.37'f32, z: 0.45'f32, w: 1.00'f32)
+  style.colors[int(ImGuiCol.ChildBg)] = ImVec4(x: 0.34'f32, y: 0.37'f32, z: 0.45'f32, w: 1.00'f32)
+  style.colors[int(ImGuiCol.PopupBg)] = ImVec4(x: 0.33'f32, y: 0.33'f32, z: 0.66'f32, w: 1.00'f32)
+
+  # Borders & Separators
+  style.colors[int(ImGuiCol.Border)] = ImVec4(x: 0.33'f32, y: 1.00'f32, z: 1.00'f32, w: 0.67'f32)
+  style.colors[int(ImGuiCol.BorderShadow)] = ImVec4(x: 0.00'f32, y: 0.00'f32, z: 0.00'f32, w: 0.00'f32)
+  style.colors[int(ImGuiCol.Separator)] = ImVec4(x: 0.33'f32, y: 1.00'f32, z: 1.00'f32, w: 0.67'f32)
+  style.colors[int(ImGuiCol.SeparatorHovered)] = ImVec4(x: 0.10'f32, y: 0.40'f32, z: 0.75'f32, w: 0.78'f32)
+  style.colors[int(ImGuiCol.SeparatorActive)] = ImVec4(x: 0.10'f32, y: 0.40'f32, z: 0.75'f32, w: 1.00'f32)
+
+  # Frames
+  style.colors[int(ImGuiCol.FrameBg)] = ImVec4(x: 0.02'f32, y: 0.08'f32, z: 0.25'f32, w: 1.00'f32)
+  style.colors[int(ImGuiCol.FrameBgHovered)] = ImVec4(x: 0.66'f32, y: 0.66'f32, z: 0.66'f32, w: 1.00'f32)
+  style.colors[int(ImGuiCol.FrameBgActive)] = ImVec4(x: 0.33'f32, y: 0.33'f32, z: 0.33'f32, w: 1.00'f32)
+
+  # Title Bars & Menus
+  style.colors[int(ImGuiCol.TitleBg)] = ImVec4(x: 0.02'f32, y: 0.08'f32, z: 0.25'f32, w: 1.00'f32)
+  style.colors[int(ImGuiCol.TitleBgActive)] = ImVec4(x: 0.00'f32, y: 0.00'f32, z: 0.66'f32, w: 1.00'f32)
+  style.colors[int(ImGuiCol.TitleBgCollapsed)] = ImVec4(x: 0.00'f32, y: 0.00'f32, z: 0.00'f32, w: 0.51'f32)
+  style.colors[int(ImGuiCol.MenuBarBg)] = ImVec4(x: 0.14'f32, y: 0.14'f32, z: 0.14'f32, w: 1.00'f32)
+
+  # Scrollbars
+  style.colors[int(ImGuiCol.ScrollbarBg)] = ImVec4(x: 0.00'f32, y: 0.66'f32, z: 0.66'f32, w: 1.00'f32)
+  style.colors[int(ImGuiCol.ScrollbarGrab)] = ImVec4(x: 0.33'f32, y: 1.00'f32, z: 1.00'f32, w: 1.00'f32)
+  style.colors[int(ImGuiCol.ScrollbarGrabHovered)] = ImVec4(x: 1.00'f32, y: 1.00'f32, z: 1.00'f32, w: 1.00'f32)
+  style.colors[int(ImGuiCol.ScrollbarGrabActive)] = ImVec4(x: 0.90'f32, y: 0.90'f32, z: 0.90'f32, w: 1.00'f32)
+
+  # Interactables
+  style.colors[int(ImGuiCol.CheckMark)] = ImVec4(x: 0.33'f32, y: 0.99'f32, z: 0.33'f32, w: 1.00'f32)
+  style.colors[int(ImGuiCol.SliderGrab)] = ImVec4(x: 0.00'f32, y: 0.66'f32, z: 0.66'f32, w: 1.00'f32)
+  style.colors[int(ImGuiCol.SliderGrabActive)] = ImVec4(x: 0.33'f32, y: 1.00'f32, z: 1.00'f32, w: 1.00'f32)
+  style.colors[int(ImGuiCol.Button)] = ImVec4(x: 0.00'f32, y: 0.00'f32, z: 0.66'f32, w: 1.00'f32)
+  style.colors[int(ImGuiCol.ButtonHovered)] = ImVec4(x: 0.66'f32, y: 0.66'f32, z: 0.66'f32, w: 1.00'f32)
+  style.colors[int(ImGuiCol.ButtonActive)] = ImVec4(x: 0.33'f32, y: 0.33'f32, z: 0.33'f32, w: 1.00'f32)
+
+  # Headers
+  style.colors[int(ImGuiCol.Header)] = ImVec4(x: 0.00'f32, y: 0.00'f32, z: 0.66'f32, w: 1.00'f32)
+  style.colors[int(ImGuiCol.HeaderHovered)] = ImVec4(x: 0.66'f32, y: 0.66'f32, z: 0.66'f32, w: 1.00'f32)
+  style.colors[int(ImGuiCol.HeaderActive)] = ImVec4(x: 0.33'f32, y: 0.33'f32, z: 0.33'f32, w: 1.00'f32)
+
+  # Tables
+  style.colors[int(ImGuiCol.TableHeaderBg)] = ImVec4(x: 0.19'f32, y: 0.19'f32, z: 0.20'f32, w: 1.00'f32)
+  style.colors[int(ImGuiCol.TableBorderStrong)] = ImVec4(x: 0.31'f32, y: 0.31'f32, z: 0.35'f32, w: 1.00'f32)
+  style.colors[int(ImGuiCol.TableBorderLight)] = ImVec4(x: 0.23'f32, y: 0.23'f32, z: 0.25'f32, w: 1.00'f32)
+  style.colors[int(ImGuiCol.TableRowBg)] = ImVec4(x: 0.00'f32, y: 0.00'f32, z: 0.00'f32, w: 0.00'f32)
+  style.colors[int(ImGuiCol.TableRowBgAlt)] = ImVec4(x: 1.00'f32, y: 1.00'f32, z: 1.00'f32, w: 0.06'f32)
+
+  # Tabs
+  style.colors[int(ImGuiCol.Tab)] = ImVec4(x: 0.02'f32, y: 0.08'f32, z: 0.25'f32, w: 1.00'f32)
+  style.colors[int(ImGuiCol.TabHovered)] = ImVec4(x: 0.66'f32, y: 0.66'f32, z: 0.66'f32, w: 1.00'f32)
+  style.colors[int(ImGuiCol.TabActive)] = ImVec4(x: 0.00'f32, y: 0.00'f32, z: 0.66'f32, w: 1.00'f32)
+  style.colors[int(ImGuiCol.TabUnfocused)] = ImVec4(x: 0.07'f32, y: 0.10'f32, z: 0.15'f32, w: 0.97'f32)
+  style.colors[int(ImGuiCol.TabUnfocusedActive)] = ImVec4(x: 0.13'f32, y: 0.26'f32, z: 0.42'f32, w: 1.00'f32)
+
+  # Misc
+  style.colors[int(ImGuiCol.PlotLines)] = ImVec4(x: 0.61'f32, y: 0.61'f32, z: 0.61'f32, w: 1.00'f32)
+  style.colors[int(ImGuiCol.PlotLinesHovered)] = ImVec4(x: 1.00'f32, y: 0.43'f32, z: 0.35'f32, w: 1.00'f32)
+  style.colors[int(ImGuiCol.PlotHistogram)] = ImVec4(x: 0.90'f32, y: 0.70'f32, z: 0.00'f32, w: 1.00'f32)
+  style.colors[int(ImGuiCol.PlotHistogramHovered)] = ImVec4(x: 1.00'f32, y: 0.60'f32, z: 0.00'f32, w: 1.00'f32)
+  style.colors[int(ImGuiCol.TextSelectedBg)] = ImVec4(x: 0.26'f32, y: 0.59'f32, z: 0.98'f32, w: 0.35'f32)
+  style.colors[int(ImGuiCol.DragDropTarget)] = ImVec4(x: 1.00'f32, y: 1.00'f32, z: 0.00'f32, w: 0.90'f32)
+  style.colors[int(ImGuiCol.NavHighlight)] = ImVec4(x: 0.26'f32, y: 0.59'f32, z: 0.98'f32, w: 1.00'f32)
+  style.colors[int(ImGuiCol.ModalWindowDimBg)] = ImVec4(x: 0.00'f32, y: 0.00'f32, z: 0.00'f32, w: 0.50'f32)
 
 proc setSelectedStyle*(indx: int = 0) =
   setupStyleGeometry()
@@ -673,6 +759,8 @@ proc setSelectedStyle*(indx: int = 0) =
     setupCyberpunkStyle()
   of 10:
     setupPaperAndInkStyle()
+  of 11:
+    setupDosSetupStyle()
   else:
     discard
 

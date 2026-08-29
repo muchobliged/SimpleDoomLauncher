@@ -33,7 +33,7 @@ type
 
 let appName: string = "MO_SimpleDoomLauncher"
 
-var version*: float = 1.23
+var version*: float = 1.231
 var latestVersion*: float = 0
 var showUpdateModal*: bool = false
 

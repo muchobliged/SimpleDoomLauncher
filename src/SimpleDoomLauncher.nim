@@ -942,8 +942,7 @@ proc main() =
     igSetNextWindowSize(ImVec2(x: viewport.size.x - state.leftWindowWidth, y: viewport.size.y), ImGuiCond.Always)
 
     igBegin("##2", nil, mainFlags2) #right(main) window - begin
-
-    if state.ports.len > 0:
+    if state.ports.len > 0 and viewport.size.x > 250 and viewport.size.y > 250: # hacky way to fix crash on minimizing. Should fix this properly later
 #----------------------------------------------------
 #---------------- tabs system begin -----------------
 #----------------------------------------------------

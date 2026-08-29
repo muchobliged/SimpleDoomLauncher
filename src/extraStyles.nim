@@ -657,7 +657,6 @@ proc setupDosSetupStyle() =
   style.popupRounding = 0.0f
   style.popupBorderSize = 1.0f
   style.frameRounding = 0.0f
-  style.frameBorderSize = 1.0f
   style.scrollbarSize = 12.0f
   style.scrollbarRounding = 0.0f
   style.grabRounding = 0.0f
@@ -669,16 +668,16 @@ proc setupDosSetupStyle() =
   style.colors[int(ImGuiCol.TextDisabled)] = ImVec4(x: 0.50'f32, y: 0.50'f32, z: 0.50'f32, w: 1.00'f32)
 
   # Backgrounds
-  style.colors[int(ImGuiCol.WindowBg)] = ImVec4(x: 0.34'f32, y: 0.37'f32, z: 0.45'f32, w: 1.00'f32)
-  style.colors[int(ImGuiCol.ChildBg)] = ImVec4(x: 0.34'f32, y: 0.37'f32, z: 0.45'f32, w: 1.00'f32)
+  style.colors[int(ImGuiCol.WindowBg)] = ImVec4(x: 0.33'f32, y: 0.33'f32, z: 0.66'f32, w: 1.00'f32)
+  style.colors[int(ImGuiCol.ChildBg)] = ImVec4(x: 0.33'f32, y: 0.33'f32, z: 0.66'f32, w: 1.00'f32)
   style.colors[int(ImGuiCol.PopupBg)] = ImVec4(x: 0.33'f32, y: 0.33'f32, z: 0.66'f32, w: 1.00'f32)
 
   # Borders & Separators
   style.colors[int(ImGuiCol.Border)] = ImVec4(x: 0.33'f32, y: 1.00'f32, z: 1.00'f32, w: 0.67'f32)
   style.colors[int(ImGuiCol.BorderShadow)] = ImVec4(x: 0.00'f32, y: 0.00'f32, z: 0.00'f32, w: 0.00'f32)
   style.colors[int(ImGuiCol.Separator)] = ImVec4(x: 0.33'f32, y: 1.00'f32, z: 1.00'f32, w: 0.67'f32)
-  style.colors[int(ImGuiCol.SeparatorHovered)] = ImVec4(x: 0.10'f32, y: 0.40'f32, z: 0.75'f32, w: 0.78'f32)
-  style.colors[int(ImGuiCol.SeparatorActive)] = ImVec4(x: 0.10'f32, y: 0.40'f32, z: 0.75'f32, w: 1.00'f32)
+  style.colors[int(ImGuiCol.SeparatorHovered)] = ImVec4(x: 1.00'f32, y: 1.00'f32, z: 1.00'f32, w: 1.00'f32)
+  style.colors[int(ImGuiCol.SeparatorActive)] = ImVec4(x: 0.90'f32, y: 0.90'f32, z: 0.90'f32, w: 1.00'f32)
 
   # Frames
   style.colors[int(ImGuiCol.FrameBg)] = ImVec4(x: 0.02'f32, y: 0.08'f32, z: 0.25'f32, w: 1.00'f32)

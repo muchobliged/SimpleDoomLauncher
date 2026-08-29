@@ -657,6 +657,7 @@ proc setupDosSetupStyle() =
   style.popupRounding = 0.0f
   style.popupBorderSize = 1.0f
   style.frameRounding = 0.0f
+  style.frameBorderSize = 1.0f
   style.scrollbarSize = 12.0f
   style.scrollbarRounding = 0.0f
   style.grabRounding = 0.0f

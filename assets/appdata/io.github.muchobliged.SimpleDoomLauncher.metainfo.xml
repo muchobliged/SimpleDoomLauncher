@@ -45,7 +45,7 @@
   </provides>
 
   <releases>
-    <release version="1.232" date="2026-08-29">
+    <release version="1.24" date="2026-08-29">
       <description>
         <p>Fixed crash on minimizing/resizing</p>
       </description>

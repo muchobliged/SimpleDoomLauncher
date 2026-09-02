@@ -29,11 +29,12 @@ type
     lang*: int32 = 0
     checkForUpdates*: bool = true
     relativePaths*: bool = false
+    extraButtons*: bool = false
 
 
 let appName: string = "MO_SimpleDoomLauncher"
 
-var version*: float = 1.24
+var version*: float = 1.3
 var latestVersion*: float = 0
 var showUpdateModal*: bool = false
 
@@ -51,8 +52,8 @@ var readyZDL*: bool = false
 var newZDLPWADS*: seq[string] = @[]
 var newZDLExtra*: string = ""
 
-var allExtensions* = @[".wad",".pk3", ".pk7"]
-var allExtensionsAst* = @["*.wad","*.pk3", "*.pk7"]
+var allExtensions* = @[".wad",".pk3", ".pk4", ".pk7", ".pke"]
+var allExtensionsAst* = @["*.wad","*.pk3", "*.pk4", "*.pk7", "*.pke"]
 
 var iwadBehavOptions = @["Default", "Doomsday"]
 var iwadBehavOptionsExpl* = @["Default: -iwad <iwad.wad> -file <pwad.wad>", "Doomsday: -iwad <directory> -file <pwad.wad>"]
@@ -356,26 +357,61 @@ proc changeDirNameWithBrackets*(str: string): string =
   return "[" & leftSpaces & text & rightSpaces & "]"
 
 
-proc findTXT*(path: string, list: seq[string]): seq[string] =
-  var newList = list
+
+proc getSmallerString*(str: string, leng: int = 100): string =
+  var newStr = str
+  let rlen = newStr.runeLen
+
+  if rlen <= leng:
+    return str
+
+  return "~" & newStr.runeSubstr(rlen - leng, rlen)
+
+
+proc readTXT*(filename: string): seq[string] =    # need to check if the file a real TXT or a fake one to avoid crashes. Maybe overkill...
+  var f: File
+  if not open(f, filename):
+    return @[]
+  defer: close(f)
+
+  const SampleSize = 4096   # read first 4 KB
+
+  var buf: array[SampleSize, char]
+  let n = f.readBuffer(addr buf[0], SampleSize)
+  if n == 0:
+    return @[]
+
+  var nulls = 0
+  var nonPrintable = 0
+  for i in 0 ..< n:
+    let c = buf[i]
+    if c == '\0':
+      nulls.inc
+    else:
+      # Control characters except tab, newline, carriage return
+      if c notin {'\t', '\n', '\r'} and ord(c) < 32:
+        nonPrintable.inc
+
+  if nulls > 0 or nonPrintable * 10 > n:
+    return @[]
+
+  return readFile(filename).splitLines()
+
+
+
+proc findTXT*(path: string): string =
+  var pwadPath = path
   when defined(windows):
-    for i in 0 .. newList.high:
-      let targetFilename = changeFileExt(newList[i], "txt")
-      if fileExists(targetFilename):
-        newList[i] = targetFilename
+    if fileExists(changeFileExt(pwadPath, "txt")):
+      return changeFileExt(pwadPath, "txt")
   else:
     var txtList: seq[string] = @[]
-    for kind, pathItem in walkDir(path):
+    for kind, pathItem in walkDir(splitFile(pwadPath).dir):
       if kind == pcFile:
         if pathItem.toLower().endsWith(".txt"):
-          txtList.add(pathItem)
-    for i in 0 .. newList.high:
-      let targetFilename = changeFileExt(newList[i], "txt")
-      for j in 0 .. txtList.high:
-        if targetFilename.toLower() == txtList[j].toLower():
-          newList[i] = txtList[j]
-          break
-  return newList
+          if changeFileExt(pwadPath, "txt").toLower() == pathItem.toLower():
+            return pathItem
+  return ""
 
 
 proc walkSelectedDir*(path: string, ext: seq[string], isIWAD: bool = false): seq[string] =
@@ -421,6 +457,59 @@ proc deletePort*(indx: int) =
   else:
     state.selectedPort = indx - 1
   state.ports.delete(indx)
+
+
+proc getSystemIntegration*(): bool =
+  var path = ""
+  when defined(linux):
+    path = getEnv("HOME") & "/.local/share/applications/io.github.muchobliged.SimpleDoomLauncher.desktop"
+  elif defined(windows):
+    path = getEnv("APPDATA") & "\\Microsoft\\Windows\\Start Menu\\Programs\\Simple Doom Launcher.lnk"
+
+  if fileExists(path):
+    return true
+  else:
+    return false
+
+proc integrateIntoSystemUndo*() {.gcsafe.} =
+  var path = ""
+  when defined(linux):
+    path = getEnv("HOME") & "/.local/share/applications/io.github.muchobliged.SimpleDoomLauncher.desktop"
+  elif defined(windows):
+    path = getEnv("APPDATA") & "\\Microsoft\\Windows\\Start Menu\\Programs\\Simple Doom Launcher.lnk"
+
+  if fileExists(path):
+    try:
+      removeFile(path)
+    except:
+      discard
+
+proc integrateIntoSystem*() {.gcsafe.} =
+  when defined(linux):
+    let appImageEnv = getEnv("APPIMAGE")
+    if appImageEnv != "":
+      let appDir = getEnv("APPDIR")
+      var iconPath = "/usr/share/icons/hicolor/256x256/apps/io.github.muchobliged.SimpleDoomLauncher.png"
+      try:
+        copyFile(appDir & iconPath, splitFile(appImageEnv).dir & "/io.github.muchobliged.SimpleDoomLauncher.png")
+        iconPath = splitFile(appImageEnv).dir & "/io.github.muchobliged.SimpleDoomLauncher.png"
+        let desktopInfo = "[Desktop Entry]\nType=Application\nName=Simple Doom Launcher\nComment=Just a simple Doom launcher\nExec=" & appImageEnv & "\nIcon=" & iconPath & "\nCategories=Game;"
+
+        let desktopPath = getEnv("HOME") & "/.local/share/applications"
+        if not dirExists(desktopPath):
+          createDir(desktopPath)
+        writeFile(desktopPath & "/io.github.muchobliged.SimpleDoomLauncher.desktop", desktopInfo)
+      except:
+        discard
+  elif defined(windows):
+    if findExe("powershell") != "":
+      let linkPath = getEnv("APPDATA") & "\\Microsoft\\Windows\\Start Menu\\Programs\\Simple Doom Launcher.lnk"
+
+      var powershellCmd = "powershell -NoProfile -Command \"$WScriptShell = New-Object -ComObject WScript.Shell; $Shortcut = $WScriptShell.CreateShortcut('" & linkPath & "'); $Shortcut.TargetPath = '" & getAppFilename() & "'; $Shortcut.Save()\""
+      try:
+        discard execCmdEx(powershellCmd, options = {poUsePath, poDaemon})
+      except:
+        discard
 
 
 proc isExecutable*(filename: string): bool =

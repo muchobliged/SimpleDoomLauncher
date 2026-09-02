@@ -4,8 +4,6 @@ import nimgl/[opengl, glfw], nimgl/imgui, nimgl/imgui/[impl_opengl, impl_glfw]
 import tinydialogs
 
 
-#TODO     Flatpak build? (flathub said no, so all flatpak related code is now redundant)     Compile to C? (why?)
-
 when defined(windows):
   proc glfwGetWin32Window(window: GLFWWindow): pointer {.importc: "glfwGetWin32Window".}
 
@@ -32,7 +30,7 @@ proc fpsLimit(win: GLFWWindow) =
   let hovered = win.getWindowAttrib(GLFWHovered) == GLFW_TRUE
   let currentTime = glfwGetTime()
   let delta = currentTime - lastFrameTime
-  #let targetDelta = if focused: 1.0 / TargetFPS else: 1.0 / BackgroundFPS
+  #let targetDelta = if focused and hovered: 1.0 / TargetFPS else: 1.0 / BackgroundFPS
   let targetDelta = 1.0 / BackgroundFPS
 
   if delta < targetDelta and not focused and not hovered:
@@ -42,6 +40,31 @@ proc fpsLimit(win: GLFWWindow) =
 
   lastFrameTime = glfwGetTime()
 
+
+proc igSetTooltipBorder*(text: seq[string]): void =
+  let style = igGetStyle()
+  let popupBorderSizeOld = style.popupBorderSize
+  style.popupBorderSize = 1.0f
+  igBeginTooltip()
+  for it in text:
+    igText(it)
+  igEndTooltip()
+  style.popupBorderSize = popupBorderSizeOld
+
+proc igSetTooltipBorder*(text: string): void =
+  let style = igGetStyle()
+  let popupBorderSizeOld = style.popupBorderSize
+  style.popupBorderSize = 1.0f
+  igSetTooltip(text)
+  style.popupBorderSize = popupBorderSizeOld
+
+proc igCheckboxBorder*(label: cstring, v: ptr bool): bool {.discardable.} =
+  let style = igGetStyle()
+  let frameBorderSizeOld = style.frameBorderSize
+  style.frameBorderSize = 1.0f
+  let result = igCheckbox(label, v)
+  style.frameBorderSize = frameBorderSizeOld
+  result
 
 
 proc openViaUserApp(path: string) =
@@ -55,9 +78,9 @@ proc hyperlink(text, url: string) =
   igText(text)
   if igIsItemHovered():
     igSetMouseCursor(ImGuiMouseCursor.Hand)
+    igSetTooltipBorder(url)
   if igIsItemClicked(ImGuiMouseButton.Left):
     openViaUserApp(url)
-
 
 
 const RawIconData = staticRead("../assets/icon.raw")
@@ -106,7 +129,7 @@ proc main() =
 
   var w: GLFWWindow = glfwCreateWindow(800, 600, "Simple Doom Launcher", icon = false)
   if w == nil:
-    discard messageBox("Error", "Failed to create GLFW window.\n\nMake sure your graphics drivers are up to date.", Ok, Error, Yes)
+    discard messageBox("Error", "\n\nThe program requires OpenGL 3.3\n\nMake sure your GPU drivers are up to date\n\n", Ok, Error, Yes)
     quit(-1)
 
   when defined(windows):
@@ -118,8 +141,6 @@ proc main() =
 
   doAssert glInit()
 
-
-
   let context = igCreateContext()
 
   let io = igGetIO()
@@ -127,7 +148,16 @@ proc main() =
 
   fontConfig.fontDataOwnedByAtlas = false
 
-  let newFont = io.fonts.addFontFromMemoryTTF(cast[pointer](fontRawData.cstring), fontRawData.len.int32, 13.0, addr fontConfig, io.fonts.getGlyphRangesCyrillic())
+  var glyphRange: seq[ImWchar] = @[
+    ImWchar(0x0020), ImWchar(0x007E),  # ASCII
+    ImWchar(0x0400), ImWchar(0x04FF),  # Cyrillic
+    ImWchar(0xEAB4), ImWchar(0xEAB4),  # U+EAB4 ()
+    ImWchar(0xEAB7), ImWchar(0xEAB7),  # U+EAB7 ()
+    ImWchar(0xEAB8), ImWchar(0xEAB8),  # U+EAB8 ()
+    ImWchar(0)
+    ]
+
+  let newFont = io.fonts.addFontFromMemoryTTF(cast[pointer](fontRawData.cstring), fontRawData.len.int32, 13.0, addr fontConfig, glyphRange[0].addr)
 
   io.fonts.build()
 
@@ -199,6 +229,8 @@ proc main() =
   var closeOnLaunch: bool = state.closeOnLaunch
   var checkForUpdates: bool = state.checkForUpdates
   var relativePaths: bool = state.relativePaths
+  var extraButtons: bool = state.extraButtons
+  var desktopIntegration: bool = getSystemIntegration()
   var didCheckForUpdates: bool = false
   var selectedFoldIWAD: string = ""
   var selectedFoldPWAD: string = ""
@@ -209,12 +241,17 @@ proc main() =
   var showConfDeleteModal: bool = true
   var showSettingsModal: bool = true
   var showPortConfigModal: bool = true
+  var showReadTXTModal: bool = false
   var selectedPortExec: string = ""
   var configuredPort: int = -1
   var shouldPasteConfig: bool = false
   var shouldOpenSettings: bool = false
   var wasFocused: bool = true
   var customPWADDirectory: string = ""
+  var txtText: seq[string] = @[]
+  var txtPath: string = ""
+  var selectedPWAD: int = -1
+  var selectedPortConf: string = ""
 
 
   proc updateWADsLists() =
@@ -222,10 +259,8 @@ proc main() =
       iwadList = walkSelectedDir(state.defaultIWADDirectory, if state.ports[state.selectedPort].allowExtraFormats: allExtensions else: @[".wad"], true)
       if customPWADDirectory.len > 0:
         pwadList = walkSelectedDir(customPWADDirectory, if state.ports[state.selectedPort].allowExtraFormats: allExtensions else: @[".wad"])
-        txtList = findTXT(customPWADDirectory, pwadList)
       else:
         pwadList = walkSelectedDir(state.defaultPWADDirectory, if state.ports[state.selectedPort].allowExtraFormats: allExtensions else: @[".wad"])
-        txtList = findTXT(state.defaultPWADDirectory, pwadList)
 
   updateWADsLists()
 
@@ -247,8 +282,8 @@ proc main() =
     let mainFlags2 = cast[ImGuiWindowFlags](ImGuiWindowFlags.NoTitleBar.int or ImGuiWindowFlags.NoMove.int or ImGuiWindowFlags.NoBringToFrontOnFocus.int or ImGuiWindowFlags.NoResize.int)
 
     let isMouseHoveringLeftWindow = igIsMouseHoveringRect(
-      ImVec2(x: 5, y: 0),
-      ImVec2(x: viewport.size.x, y: viewport.size.y),
+      ImVec2(x: 5, y: 4),
+      ImVec2(x: viewport.size.x, y: viewport.size.y - 4),
       false
       )                       #hack to make left window resizable only from right border
 
@@ -300,7 +335,7 @@ proc main() =
 
     igSetNextWindowSize(ImVec2(x: viewport.size.x / 2.5f, y: viewport.size.y / 3), ImGuiCond.Appearing)
     igSetNextWindowPos(windowCenter, ImGuiCond.Appearing, ImVec2(x: 0.5f, y: 0.5f))
-    if igBeginPopupModal(trans.updateFound[0] & "###Update Popup", showUpdateModal.addr, cast[ImGuiWindowFlags](ImGuiWindowFlags.NoResize.int)):
+    if igBeginPopupModal(trans.updateFound[0] & "###Update Popup", showUpdateModal.addr, ImGuiWindowFlags.NoResize):
       if igIsKeyPressed(256, false):          #for some reason nimgl bindings don't work, so 256 = Escape
         showUpdateModal = false
       igSeparator()
@@ -363,7 +398,7 @@ proc main() =
 
     igSetNextWindowSize(ImVec2(x: viewport.size.x / 2.5f, y: viewport.size.y / 1.65f), ImGuiCond.Appearing)
     igSetNextWindowPos(windowCenter, ImGuiCond.Appearing, ImVec2(x: 0.5f, y: 0.5f))
-    if igBeginPopupModal(trans.addport & "###Add Port Popup", showAddPortModal.addr, cast[ImGuiWindowFlags](ImGuiWindowFlags.NoResize.int)):
+    if igBeginPopupModal(trans.addport & "###Add Port Popup", showAddPortModal.addr, ImGuiWindowFlags.NoResize):
       if igIsKeyPressed(256, false):          #for some reason nimgl bindings don't work, so 256 = Escape
         showAddPortModal = false
       var isChanged: bool = false
@@ -391,6 +426,9 @@ proc main() =
         if igButton(foldText & "##99999", ImVec2(x: buttSize, y: 0)):
           selectedPortExec = openFileDialog(trans.selectexecutable, getCurrentDir(), when defined(windows): ["*.exe"] else: ["*"], "Executable")
           isChanged = true
+      if igIsItemHovered():
+          if foldText != trans.selectexecutable:
+            igSetTooltipBorder(getSmallerString(selectedPortExec))
       else:
         when defined(linux):
           if useFlatpak:
@@ -408,7 +446,7 @@ proc main() =
           igAlignTextToFramePadding()
           igText("Flatpak:")
           igSameLine()
-          if igCheckbox("##useFlatpak", useFlatpak.addr):
+          if igCheckboxBorder("##useFlatpak", useFlatpak.addr):
             isChanged = true
 
 
@@ -419,10 +457,7 @@ proc main() =
       igAlignTextToFramePadding()
       igText(trans.commandspreset)
       if igIsItemHovered():
-        igBeginTooltip()
-        for el in 0 .. iwadBehavOptionsExpl.high:
-          igText(iwadBehavOptionsExpl[el])
-        igEndTooltip()
+        igSetTooltipBorder(iwadBehavOptionsExpl)
       igSameLine()
       igSetNextItemWidth(availReg.x/3)
       discard igCombo("##99998", comboIndexIWADBehav.addr, iwadBehavOptionsCSTRING[0].addr, iwadBehavOptionsCSTRING.len.int32, -1)
@@ -433,18 +468,18 @@ proc main() =
         igAlignTextToFramePadding()
         igText(trans.makeexecportable)
         if igIsItemHovered():
-          igSetTooltip(trans.makeexecportableFAQ)
+          igSetTooltipBorder(trans.makeexecportableFAQ)
         igSameLine()
-        igCheckbox("##doPortable", doPortable.addr)
+        igCheckboxBorder("##doPortable", doPortable.addr)
 
       igCalcTextSizeNonUDT(textSize.addr, trans.extraformats & "    ", nil, false, -1.0)
       igSetCursorPosX(style.windowPadding.x + availReg.x/2 - (textSize.x + style.itemSpacing.x) / 2)
       igAlignTextToFramePadding()
       igText(trans.extraformats)
       if igIsItemHovered():
-        igSetTooltip(trans.extraformatsFAQ)
+        igSetTooltipBorder(trans.extraformatsFAQ)
       igSameLine()
-      igCheckbox("##extraformats", allowExtraFormats.addr)
+      igCheckboxBorder("##extraformats", allowExtraFormats.addr)
 
       igSeparator()
 
@@ -499,16 +534,19 @@ proc main() =
 
         updateWADsLists()
 
-      if igBeginPopupContextItem("##portSettings", ImGuiPopupFlags.MouseButtonRight):
+      if igIsItemHovered() and (igIsMouseDoubleClicked(ImGuiMouseButton.Left) or igIsMouseClicked(ImGuiMouseButton.Right)):
+        igOpenPopup("##portSettings")
+
+      if igBeginPopup("##portSettings"):
         if igButton(trans.configure):
           shouldConfig = n
           igCloseCurrentPopup()
-
         igEndPopup()
+
 
       if igIsItemActive() and not igIsItemHovered():    #rearrangement for igSelectable
         var delta: ImVec2
-        igGetMouseDragDeltaNonUDT(delta.addr, ImGuiMouseButton(0), -1.0)
+        igGetMouseDragDeltaNonUDT(delta.addr, ImGuiMouseButton.Left, -1.0)
         let nNext = n + (if delta.y < 0.0: -1 else: 1)
         if nNext >= 0 and nNext < state.ports.len:
           swap(state.ports[n], state.ports[nNext])
@@ -516,7 +554,7 @@ proc main() =
               state.selectedPort = nNext
           elif state.selectedPort == nNext:
               state.selectedPort = n
-          igResetMouseDragDelta(ImGuiMouseButton(0))
+          igResetMouseDragDelta(ImGuiMouseButton.Left)
       igPopID()
 
     igEndChild()
@@ -553,6 +591,8 @@ proc main() =
         checkForUpdates = state.checkForUpdates
         closeOnLaunch = state.closeOnLaunch
         relativePaths = state.relativePaths
+        extraButtons = state.extraButtons
+        desktopIntegration = getSystemIntegration()
         showAbout = false
         if state.defaultIWADDirectory.len > 0:
           selectedFoldIWAD = state.defaultIWADDirectory
@@ -568,7 +608,7 @@ proc main() =
 #-------------- Settings popup begin ----------------
 #----------------------------------------------------
 
-    igSetNextWindowSize(ImVec2(x: viewport.size.x / 2, y: viewport.size.y / 1.35f), ImGuiCond.Appearing)
+    igSetNextWindowSize(ImVec2(x: viewport.size.x / 1.85f, y: viewport.size.y / 1.15f), ImGuiCond.Always)
     igSetNextWindowPos(windowCenter, ImGuiCond.Appearing, ImVec2(x: 0.5f, y: 0.5f))
     if igBeginPopupModal(if not showAbout: trans.settings & "###Settings" else: trans.about & "###Settings", if not isFirstLaunch: showSettingsModal.addr else: nil, ImGuiWindowFlags.NoResize):
       if igIsKeyPressed(256, false):    #for some reason nimgl bindings don't work, so 256 = Escape
@@ -586,10 +626,7 @@ proc main() =
         igSetCursorPosX(style.windowPadding.x + availReg.x - textSize.x)
         igText("(?)")
         if igIsItemHovered():
-          igBeginTooltip()
-          for it in trans.tips:
-            igText(it)
-          igEndTooltip()
+          igSetTooltipBorder(trans.tips)
 
         igCalcTextSizeNonUDT(textSize.addr, trans.language, nil, false, -1.0)
         igSetCursorPosX(style.windowPadding.x + availReg.x/2 - (textSize.x + style.itemSpacing.x + availReg.x/2.5f) / 2)
@@ -619,6 +656,7 @@ proc main() =
           pwadButtText = trans.select
         else:
           pwadButtText = selectedFoldPWAD
+
         igCalcTextSizeNonUDT(textSize.addr, trans.iwadsdirectory, nil, false, -1.0)
         igSetCursorPosX(style.windowPadding.x + availReg.x/2 - (textSize.x + style.itemSpacing.x + availReg.x/3) / 2)
         igAlignTextToFramePadding()
@@ -628,6 +666,11 @@ proc main() =
           selectedFoldIWAD = selectFolderDialog(trans.iwadsdirectoryHelper, getCurrentDir())
           if selectedFoldIWAD.len > 0:
             selectedFoldIWAD = fixFold(selectedFoldIWAD)
+
+        if igIsItemHovered():
+          if selectedFoldIWAD.len > 0:
+            igSetTooltipBorder(getSmallerString(selectedFoldIWAD))
+
         igCalcTextSizeNonUDT(textSize.addr, trans.pwadsdirectory, nil, false, -1.0)
         igSetCursorPosX(style.windowPadding.x + availReg.x/2 - (textSize.x + style.itemSpacing.x + availReg.x/3) / 2)
         igAlignTextToFramePadding()
@@ -638,63 +681,86 @@ proc main() =
           if selectedFoldPWAD.len > 0:
             selectedFoldPWAD = fixFold(selectedFoldPWAD)
 
+        if igIsItemHovered():
+          if selectedFoldPWAD.len > 0:
+            igSetTooltipBorder(getSmallerString(selectedFoldPWAD))
+
 
         igText("")
 
-        if iAmFlatpak:
-          igText("")
-        else:
-          igCalcTextSizeNonUDT(textSize.addr, trans.checkForUpdates & "    ", nil, false, -1.0) #idk what checkbox size is so spaces work just fine
-          igSetCursorPosX(style.windowPadding.x + availReg.x/2 - (textSize.x + style.itemSpacing.x) / 2)
+        igSetCursorPosX(style.windowPadding.x + availReg.x/2 - (availReg.x/2)/2)
+        if igBeginListBox("##Extra settings ListBox", ImVec2(x: availReg.x / 2, y: itemHeight * 6)):
+          if not iAmFlatpak:
+            igAlignTextToFramePadding()
+            igText(trans.desktopIntegration)
+            if igIsItemHovered():
+              when defined(linux):
+                igSetTooltipBorder(trans.desktopIntegrationFAQLIN)
+              elif defined(windows):
+                igSetTooltipBorder(trans.desktopIntegrationFAQWIN)
+            igSameLine()
+            igCheckboxBorder("##8005", desktopIntegration.addr)
+
+            igAlignTextToFramePadding()
+            igText(trans.checkForUpdates)
+            if igIsItemHovered():
+              igSetTooltipBorder(trans.checkForUpdatesFAQ)
+            igSameLine()
+            igCheckboxBorder("##checkUpdates", checkForUpdates.addr)
+
           igAlignTextToFramePadding()
-          igText(trans.checkForUpdates)
+          igText(trans.closeonlaunch)
           if igIsItemHovered():
-            igBeginTooltip()
-            for it in trans.checkForUpdatesFAQ:
-              igText(it)
-            igEndTooltip()
+            igSetTooltipBorder(trans.closeonlaunchFAQ)
           igSameLine()
-          igCheckbox("##checkUpdates", checkForUpdates.addr)
+          igCheckboxBorder("##8004", closeOnLaunch.addr)
 
-        igCalcTextSizeNonUDT(textSize.addr, trans.relativePaths & "    ", nil, false, -1.0) #idk what checkbox size is so spaces work just fine
-        igSetCursorPosX(style.windowPadding.x + availReg.x/2 - (textSize.x + style.itemSpacing.x) / 2)
-        igAlignTextToFramePadding()
-        igText(trans.relativePaths)
-        if igIsItemHovered():
-          igBeginTooltip()
-          for it in trans.relativePathsFAQ:
-            igText(it)
-          igEndTooltip()
-        igSameLine()
-        igCheckbox("##8003", relativePaths.addr)
+          igAlignTextToFramePadding()
+          igText(trans.relativePaths)
+          if igIsItemHovered():
+            igSetTooltipBorder(trans.relativePathsFAQ)
+          igSameLine()
+          igCheckboxBorder("##8003", relativePaths.addr)
 
-        igCalcTextSizeNonUDT(textSize.addr, trans.closeonlaunch & "    ", nil, false, -1.0) #idk what checkbox size is so spaces work just fine
-        igSetCursorPosX(style.windowPadding.x + availReg.x/2 - (textSize.x + style.itemSpacing.x) / 2)
-        igAlignTextToFramePadding()
-        igText(trans.closeonlaunch)
-        if igIsItemHovered():
-          igSetTooltip(trans.closeonlaunchFAQ)
-        igSameLine()
-        igCheckbox("##8004", closeOnLaunch.addr)
+          igAlignTextToFramePadding()
+          igText(trans.extraPWADButtons)
+          if igIsItemHovered():
+            igSetTooltipBorder(trans.extraPWADButtonsFAQ)
+          igSameLine()
+          igCheckboxBorder("##Extra PWAD buttons", extraButtons.addr)
 
-        #igText("")
-        igText("")
+          igEndListBox()
+
+        igSetCursorPosY(availReg.y - itemHeight * 2.5f)
         igBeginDisabled(selectedFoldIWAD.len <= 0 or selectedFoldPWAD.len <= 0)
-        igSetCursorPosX(style.windowPadding.x + availReg.x/2 - (availReg.x/2.5f)/2)
-        if igButton(trans.save & "##8005", ImVec2(x: availReg.x/2.5f, y: itemHeight * 1.25f)):
+        igSetCursorPosX(style.windowPadding.x + availReg.x/2 - (availReg.x/2)/2)
+        if igButton(trans.save & "##Save settings", ImVec2(x: availReg.x/2f, y: itemHeight * 1.4f)):
           state.defaultIWADDirectory = selectedFoldIWAD
           state.defaultPWADDirectory = selectedFoldPWAD
           state.closeOnLaunch = closeOnLaunch
           state.checkForUpdates = checkForUpdates
           state.relativePaths = relativePaths
+          state.extraButtons = extraButtons
+          if not extraButtons:
+            selectedPWAD = -1
+          if getSystemIntegration():
+            if not desktopIntegration:
+              spawn integrateIntoSystemUndo()
+          else:
+            if desktopIntegration:
+              spawn integrateIntoSystem()
           updateWADsLists()
           showSettingsModal = false
           if isFirstLaunch:
             isFirstLaunch = false
             igCloseCurrentPopup()
         igEndDisabled()
+        if igIsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled):
+          if selectedFoldIWAD.len <= 0 or selectedFoldPWAD.len <= 0:
+            igSetTooltipBorder(trans.needToSelectFolders)
 
-        igSetCursorPosY(availReg.y)
+        igText("")
+
         igSeparator()
         igSetCursorPosX(style.windowPadding.x + availReg.x/2 - (availReg.x/3)/2)
         if igButton(trans.about, ImVec2(x: availReg.x/3, y: itemHeight * 0.95f)):
@@ -703,6 +769,7 @@ proc main() =
       else:
         var availRegChild: ImVec2
         igGetContentRegionAvailNonUDT(availReg.addr)
+        igText("")
         igText("")
         igText("")
         igText("")
@@ -720,6 +787,11 @@ proc main() =
         igBeginChild("AboutCreditsUp", ImVec2(x: availReg.x/1.5f, y: availReg.y/4))
         igGetContentRegionAvailNonUDT(availRegChild.addr)
         igSeparator()
+        hyperlink("nim-lang", "https://nim-lang.org")
+        igSameLine()
+        igCalcTextSizeNonUDT(textSize.addr, "Nim/nimble", nil, false, -1.0)
+        igSetCursorPosX(availRegChild.x - textSize.x)
+        hyperlink("Nim/nimble", "https://github.com/nim-lang/Nim")
         hyperlink("Imariscal", "https://github.com/lmariscal")
         igSameLine()
         igCalcTextSizeNonUDT(textSize.addr, "NimGL/ImGui", nil, false, -1.0)
@@ -735,6 +807,11 @@ proc main() =
         igCalcTextSizeNonUDT(textSize.addr, "some themes", nil, false, -1.0)
         igSetCursorPosX(availRegChild.x - textSize.x)
         hyperlink("some themes", "https://github.com/ocornut/imgui/issues/707")
+        hyperlink("bangstk", "https://github.com/bangstk")
+        igSameLine()
+        igCalcTextSizeNonUDT(textSize.addr, "contributions", nil, false, -1.0)
+        igSetCursorPosX(availRegChild.x - textSize.x)
+        igText("contributions")
         igSeparator()
         igEndChild()
         igText("")
@@ -807,6 +884,9 @@ proc main() =
           if igButton(foldText & "##selectexec", ImVec2(x: buttSize, y: 0)):
             selectedPortExec = openFileDialog(trans.selectexecutable, getCurrentDir(), when defined(windows): ["*.exe"] else: ["*"], "Executable")
             isChanged = true
+          if igIsItemHovered():
+            if foldText != trans.selectexecutable:
+              igSetTooltipBorder(getSmallerString(selectedPortExec))
         else:
           when defined(linux):
             igSetCursorPosX(style.windowPadding.x + availReg.x/2 - buttSize/2)
@@ -824,10 +904,7 @@ proc main() =
         igAlignTextToFramePadding()
         igText(trans.commandspreset)
         if igIsItemHovered():
-          igBeginTooltip()
-          for el in 0 .. iwadBehavOptionsExpl.high:
-            igText(iwadBehavOptionsExpl[el])
-          igEndTooltip()
+          igSetTooltipBorder(iwadBehavOptionsExpl)
         igSameLine()
         igSetNextItemWidth(availReg.x/3)
         discard igCombo("##99998", comboIndexIWADBehav.addr, iwadBehavOptionsCSTRING[0].addr, iwadBehavOptionsCSTRING.len.int32, -1)
@@ -838,9 +915,9 @@ proc main() =
           igAlignTextToFramePadding()
           igText(trans.makeexecportable)
           if igIsItemHovered():
-            igSetTooltip(trans.makeexecportableFAQ)
+            igSetTooltipBorder(trans.makeexecportableFAQ)
           igSameLine()
-          igCheckbox("##doPortable", doPortable.addr)
+          igCheckboxBorder("##doPortable", doPortable.addr)
 
 
         igCalcTextSizeNonUDT(textSize.addr, trans.extraformats & "    ", nil, false, -1.0)
@@ -848,9 +925,9 @@ proc main() =
         igAlignTextToFramePadding()
         igText(trans.extraformats)
         if igIsItemHovered():
-          igSetTooltip(trans.extraformatsFAQ)
+          igSetTooltipBorder(trans.extraformatsFAQ)
         igSameLine()
-        igCheckbox("##extraformats", allowExtraFormats.addr)
+        igCheckboxBorder("##extraformats", allowExtraFormats.addr)
         igSeparator()
 
         igText("")
@@ -942,7 +1019,8 @@ proc main() =
     igSetNextWindowSize(ImVec2(x: viewport.size.x - state.leftWindowWidth, y: viewport.size.y), ImGuiCond.Always)
 
     igBegin("##2", nil, mainFlags2) #right(main) window - begin
-    if state.ports.len > 0 and viewport.size.x > 250 and viewport.size.y > 250: # hacky way to fix crash on minimizing. Should fix this properly later
+    if state.ports.len > 0:
+
 #----------------------------------------------------
 #---------------- tabs system begin -----------------
 #----------------------------------------------------
@@ -970,11 +1048,15 @@ proc main() =
 
 
       if igSelectable("  +  ", false, ImGuiSelectableFlags.None, ImVec2(x: availReg.x/20, y: itemHeight)):
-        shouldAddTab = true
+        igOpenPopup("##tryToAddCFG")
 
-      if igBeginPopupContextItem("  +  " & "##tryToAddStuff", ImGuiPopupFlags.MouseButtonRight):
+      if igBeginPopup("##tryToAddCFG"):
         var availRegTabsRenamePopup: ImVec2
         igGetContentRegionAvailNonUDT(availRegTabsRenamePopup.addr)
+
+        if igButton(trans.add, ImVec2(x: availRegTabsRenamePopup.x, y: 0)):
+          shouldAddTab = true
+          igCloseCurrentPopup()
 
         if copyConfig:
           if igButton(trans.paste, ImVec2(x: availRegTabsRenamePopup.x, y: 0)):
@@ -1011,8 +1093,14 @@ proc main() =
           if igSelectable(tab.name, port.selectedConfig == i, ImGuiSelectableFlags.None, ImVec2(x: availReg.x/5, y: itemHeight)):
             port.selectedConfig = i
             updateWADsLists()
+
+          if igIsItemHovered() and (igIsMouseDoubleClicked(ImGuiMouseButton.Left) or igIsMouseClicked(ImGuiMouseButton.Right)):
+            igOpenPopup($tab.name & "##tabDeletePopUp")
+
           if port.selectedConfig == i:
-            if igBeginPopupContextItem($tab.name & "##tabDeletePopUp", ImGuiPopupFlags.MouseButtonRight):
+
+
+            if igBeginPopup($tab.name & "##tabDeletePopUp"):
               var availRegTabsRenamePopup: ImVec2
               igGetContentRegionAvailNonUDT(availRegTabsRenamePopup.addr)
               if igButton(trans.exportCFG, ImVec2(x: availRegTabsRenamePopup.x, y: 0)):
@@ -1040,7 +1128,7 @@ proc main() =
 
           if igIsItemActive() and not igIsItemHovered():    #rearrangement for igSelectable
             var delta: ImVec2
-            igGetMouseDragDeltaNonUDT(delta.addr, ImGuiMouseButton(0), -1.0)
+            igGetMouseDragDeltaNonUDT(delta.addr, ImGuiMouseButton.Left, -1.0)
             let iNext = i + (if delta.x < 0.0: -1 else: 1)
             if iNext >= 0 and iNext < confs[].len:
               swap(confs[i], confs[iNext])
@@ -1048,7 +1136,7 @@ proc main() =
                   port.selectedConfig = iNext
               elif port.selectedConfig == iNext:
                   port.selectedConfig = i
-              igResetMouseDragDelta(ImGuiMouseButton(0))
+              igResetMouseDragDelta(ImGuiMouseButton.Left)
 
           igPopID()
 
@@ -1227,143 +1315,187 @@ proc main() =
         igGetContentRegionAvailNonUDT(rightWindowAvailSize.addr)
         igBeginChild("TabsContent", ImVec2(x: rightWindowAvailSize.x, y: rightWindowAvailSize.y))
         igGetContentRegionAvailNonUDT(availRegTabs.addr)
-        var buttSize = availRegTabs.x/2
         igText("")
         igCalcTextSizeNonUDT(textSize.addr, "IWAD", nil, false, -1.0)
         igSetCursorPosX(availRegTabs.x/2 - (textSize.x) / 2)
         igText("IWAD")
-        igSetCursorPosX(availRegTabs.x/2 - (availRegTabs.x / 2) / 2)
-        igBeginListBox("##IWAD ListBox", ImVec2(x: if iwadList.len < 3: buttSize else: buttSize + style.scrollbarSize, y: itemHeight * 2.25f))
-        if iwadList.len > 0:
-          for j in 0 .. iwadList.high:
-            igPushID(iwadList[j])
-            if igSelectable(extractFilename(iwadList[j]), conf.iwad == iwadList[j]):
-              conf.iwad = iwadList[j]
-            igPopID()
-        else:
-          canPlay = false
-          igSeparator()
-          if igSelectable(trans.iwadsnotfound, false):
-            shouldOpenSettings = true
+        var buttSize = availRegTabs.x/2
+        igSetCursorPosX(availRegTabs.x/2 - (buttSize / 2))
+        if igBeginListBox("##IWAD ListBox", ImVec2(x: buttSize, y: itemHeight * 2.25f)):
+          if iwadList.len > 0:
+            for j in 0 .. iwadList.high:
+              igPushID(iwadList[j])
+              var name = extractFilename(iwadList[j])
+              if iwadList.len >= 3:
+                name = "  " & name    # text centering with scrollbar
+              if igSelectable(name, conf.iwad == iwadList[j]):
+                conf.iwad = iwadList[j]
+              igPopID()
+          else:
+            canPlay = false
+            igSeparator()
+            if igSelectable(trans.iwadsnotfound, false):
+              shouldOpenSettings = true
 
-          if igIsItemHovered():
-            igSetTooltip(trans.selectproperiwadsdir)
+            if igIsItemHovered():
+              igSetTooltipBorder(trans.selectproperiwadsdir)
 
-          igSeparator()
-        igEndListBox()
+            igSeparator()
+          igEndListBox()
+
         igText("")
         igCalcTextSizeNonUDT(textSize.addr, "PWAD", nil, false, -1.0)
         igSetCursorPosX(availRegTabs.x/2 - (textSize.x) / 2)
-        igText("PWADs")
+        igText("PWAD")
 
 
         buttSize = availRegTabs.x/3
         var butt1Size = availRegTabs.x/3
         if conf.pwads.len >= 9:
-          buttSize += style.scrollbarSize
-        if pwadList.len >= 9:
-          butt1Size += style.scrollbarSize
+          buttSize += style.scrollbarSize * 2
+        if pwadList.len >= 10:
+          butt1Size += style.scrollbarSize * 2
 
+        var shouldMovePWADup = false
+        var shouldMovePWADdown = false
         var shouldRemovePWAD = -1
         var shouldAddPWAD = -1
         var customWAD = ""
         var shouldGoUpPWADDir = false
         var shouldGoCustomPWADDir = false
-        igSetCursorPosX(availRegTabs.x/2 - (buttSize + butt1Size/1.5f + style.itemSpacing.x) / 2)
-        igBeginListBox("##PWADs selected ListBox", ImVec2(x: buttSize, y: itemHeight * 8))
-        for j in 0 .. conf.pwads.high:
-          igPushID(conf.pwads[j] & "##selectedPWAD")
+        var shouldOpenReadTXT = false
 
-          discard igSelectable(extractFilename(conf.pwads[j]), false)
 
-          if igIsItemClicked(ImGuiMouseButton(1)):
-            shouldRemovePWAD = j
+        if state.extraButtons:
 
-          if igIsItemActive() and not igIsItemHovered():    #rearrangement for igSelectable
-            var delta: ImVec2
-            igGetMouseDragDeltaNonUDT(delta.addr, ImGuiMouseButton(0), -1.0)
-            let jNext = j + (if delta.y < 0.0: -1 else: 1)
-            if jNext >= 0 and jNext < conf.pwads.len:
-              swap(conf.pwads[j], conf.pwads[jNext])
-              igResetMouseDragDelta(ImGuiMouseButton(0))
+          if selectedPortConf != state.ports[state.selectedPort].name & " " & state.ports[state.selectedPort].configs[state.ports[state.selectedPort].selectedConfig].name:
+            selectedPWAD = -1   #super lazy way of dropping selectedPWAD on config change
 
-          igPopID()
-        igSeparator()
-        if igSelectable(trans.addcustompwad):
-          customWAD = openFileDialog(trans.addcustompwad, if state.defaultPWADDirectory != "": state.defaultPWADDirectory else: getCurrentDir(), if state.ports[state.selectedPort].allowExtraFormats: allExtensionsAst else: @["*.wad"], "WADs")
-          if conf.pwads.contains(customWAD):
-            customWAD = ""
-        igSeparator()
+          igSetCursorPosX(availRegTabs.x/2 - ((buttSize + butt1Size/1.5f + style.itemSpacing.x) / 2 + buttSize/7 + 2))
+          style.itemSpacing = ImVec2(x: 2f, y: 7f)
+          igBeginChild("", ImVec2(x: buttSize/7, y: itemHeight * 8))
 
-        if shouldAddDragWAD:
-          shouldAddDragWAD = false
-          if igIsMouseHoveringRect(ImVec2(x: state.leftWindowWidth, y: 0), ImVec2(x: viewport.size.x, y: viewport.size.y), false):
-            if not state.ports[state.selectedPort].allowExtraFormats:
-              if dragPath.toLower().endsWith(".wad"):
-                customWAD = dragPath
+          igBeginDisabled(selectedPWAD <= 0)
+          if igButton(""):
+            shouldMovePWADup = true
+          igEndDisabled()
+
+          igBeginDisabled(selectedPWAD < 0 or selectedPWAD == conf.pwads.high)
+          if igButton(""):
+            shouldMovePWADdown = true
+          igEndDisabled()
+
+          igBeginDisabled(selectedPWAD < 0)
+          if igButton(""):
+            shouldRemovePWAD = selectedPWAD
+          igEndDisabled()
+
+          igBeginDisabled(selectedPWAD < 0 or txtPath.len <= 0)
+          if igButton("?"):
+            shouldOpenReadTXT = true
+          igEndDisabled()
+
+          igEndChild()
+          igSameLine()
+          style.itemSpacing = ImVec2(x: 7f, y: 7f)
+        else:
+          igSetCursorPosX(availRegTabs.x/2 - (buttSize + butt1Size/1.5f + style.itemSpacing.x) / 2)
+
+        if igBeginListBox("##PWADs selected ListBox", ImVec2(x: buttSize, y: itemHeight * 8)):
+          for j in 0 .. conf.pwads.high:
+            igPushID(conf.pwads[j] & "##selectedPWAD")
+
+            if state.extraButtons:
+              if igSelectable(extractFilename(conf.pwads[j]), j == selectedPWAD):
+                selectedPWAD = j
+                selectedPortConf = state.ports[state.selectedPort].name & " " & state.ports[state.selectedPort].configs[state.ports[state.selectedPort].selectedConfig].name  #super lazy way of dropping selectedPWAD on config change
+                let txt = findTXT(conf.pwads[j])
+                if txt.len > 0:
+                  txtPath = txt
+                else:
+                  txtPath = ""
             else:
-              customWAD = dragPath
+              if igSelectable(extractFilename(conf.pwads[j]), false):
+                selectedPWAD = -1
+
+            if igIsItemClicked(ImGuiMouseButton.Right):
+              shouldRemovePWAD = j
+
+            if igIsItemActive() and not igIsItemHovered():    #rearrangement for igSelectable
+              var delta: ImVec2
+              igGetMouseDragDeltaNonUDT(delta.addr, ImGuiMouseButton.Left, -1.0)
+              let jNext = j + (if delta.y < 0.0: -1 else: 1)
+              if jNext >= 0 and jNext < conf.pwads.len:
+                swap(conf.pwads[j], conf.pwads[jNext])
+                igResetMouseDragDelta(ImGuiMouseButton.Left)
+
+            igPopID()
+          igSeparator()
+          if igSelectable(trans.addcustompwad):
+            customWAD = openFileDialog(trans.addcustompwad, if state.defaultPWADDirectory != "": state.defaultPWADDirectory else: getCurrentDir(), if state.ports[state.selectedPort].allowExtraFormats: allExtensionsAst else: @["*.wad"], "WADs")
             if conf.pwads.contains(customWAD):
               customWAD = ""
-        igEndListBox()
+          igSeparator()
+
+          if shouldAddDragWAD:
+            shouldAddDragWAD = false
+            if igIsMouseHoveringRect(ImVec2(x: state.leftWindowWidth, y: 0), ImVec2(x: viewport.size.x, y: viewport.size.y), false):
+              if not state.ports[state.selectedPort].allowExtraFormats:
+                if dragPath.toLower().endsWith(".wad"):
+                  customWAD = dragPath
+              else:
+                customWAD = dragPath
+              if conf.pwads.contains(customWAD):
+                customWAD = ""
+          igEndListBox()
 
         igSameLine()
-        igBeginListBox("##PWADs ListBox", ImVec2(x: butt1Size/1.5f, y: itemHeight * 8))
-        if pwadList.len > 0:
-          var foldSuffix = " - i am folder!@#@!"
+        if igBeginListBox("##PWADs ListBox", ImVec2(x: butt1Size/1.5f, y: itemHeight * 8)):
+          if pwadList.len > 0:
+            var foldSuffix = " - i am folder!@#@!"
 
-          if customPWADDirectory.len > 0:
+            if customPWADDirectory.len > 0:
+              if igSelectable("...", false):
+                shouldGoUpPWADDir = true
+              igSeparator()
+
+            for j in 0 .. pwadList.high:
+
+              if pwadList[j].toLower().endsWith(foldSuffix):
+                igPushID(pwadList[j])
+                if igSelectable(changeDirNameWithBrackets(extractFilename(pwadList[j])[0 .. ^(foldSuffix.len + 1)])):
+                  shouldGoCustomPWADDir = true
+                  customPWADDirectory = pwadList[j][0 .. ^(foldSuffix.len + 1)]
+                igPopID()
+              else:
+                var canAddPwad: bool = true
+
+                if conf.pwads.contains(pwadList[j]):
+                  canAddPwad = false
+
+                if canAddPwad:
+                  igPushID(pwadList[j])
+                  if igSelectable(extractFilename(pwadList[j])):
+                    shouldAddPWAD = j
+
+                  igPopID()
+          elif customPWADDirectory.len > 0:
             if igSelectable("...", false):
               shouldGoUpPWADDir = true
             igSeparator()
+            discard igSelectable(trans.pwadsnotfound, false)
+            igSeparator()
+          else:
+            igSeparator()
+            if igSelectable(trans.pwadsnotfound, false):
+              shouldOpenSettings = true
 
-          for j in 0 .. pwadList.high:
+            if igIsItemHovered():
+              igSetTooltipBorder(trans.selectproperpwadsdir)
 
-            if pwadList[j].toLower().endsWith(foldSuffix):
-              igPushID(pwadList[j])
-              if igSelectable(changeDirNameWithBrackets(extractFilename(pwadList[j])[0 .. ^(foldSuffix.len + 1)])):
-                shouldGoCustomPWADDir = true
-                customPWADDirectory = pwadList[j][0 .. ^(foldSuffix.len + 1)]
-              igPopID()
-            else:
-              var canAddPwad: bool = true
+            igSeparator()
 
-              for k in 0 .. conf.pwads.high:
-                if pwadList[j] == conf.pwads[k]:
-                  canAddPwad = false
-                  break
-
-              if canAddPwad:
-                igPushID(pwadList[j])
-                if igSelectable(extractFilename(pwadList[j])):
-                  shouldAddPWAD = j
-
-                if igIsItemHovered() and txtList[j].toLower().endsWith(".txt"):
-                  igSetMouseCursor(ImGuiMouseCursor.Hand)
-
-                if igIsItemClicked(ImGuiMouseButton(1)):    #search and open .txt for WAD
-                  if txtList[j].toLower().endsWith(".txt"):
-                    if fileExists(txtList[j]):
-                      openViaUserApp(txtList[j])
-
-                igPopID()
-        elif customPWADDirectory.len > 0:
-          if igSelectable("...", false):
-            shouldGoUpPWADDir = true
-          igSeparator()
-          discard igSelectable(trans.pwadsnotfound, false)
-          igSeparator()
-        else:
-          igSeparator()
-          if igSelectable(trans.pwadsnotfound, false):
-            shouldOpenSettings = true
-
-          if igIsItemHovered():
-            igSetTooltip(trans.selectproperpwadsdir)
-
-          igSeparator()
-
-        igEndListBox()
+          igEndListBox()
         igText("")
         igCalcTextSizeNonUDT(textSize.addr, trans.extracommands, nil, false, -1.0)
         igGetContentRegionAvailNonUDT(availRegTabs.addr)
@@ -1379,10 +1511,7 @@ proc main() =
         #igAlignTextToFramePadding()
         igText("(?)")
         if igIsItemHovered():
-          igBeginTooltip()
-          for it in trans.extracommandsFAQ:
-            igText(it)
-          igEndTooltip()
+          igSetTooltipBorder(trans.extracommandsFAQ)
 
         igText("")
         igText("")
@@ -1401,10 +1530,26 @@ proc main() =
 
         if shouldRemovePWAD >= 0:
           conf.pwads.delete(shouldRemovePWAD)
+          selectedPWAD = -1
+
         if shouldAddPWAD >= 0:
           conf.pwads.add(pwadList[shouldAddPWAD])
+          selectedPWAD = -1
+
         if customWAD != "":
           conf.pwads.add(customWAD)
+          selectedPWAD = -1
+
+        if shouldMovePWADup:
+          if selectedPWAD > 0:
+            swap(conf.pwads[selectedPWAD - 1], conf.pwads[selectedPWAD])
+            selectedPWAD -= 1
+
+        if shouldMovePWADdown:
+          if selectedPWAD >= 0 and selectedPWAD != conf.pwads.high:
+            swap(conf.pwads[selectedPWAD + 1], conf.pwads[selectedPWAD])
+            selectedPWAD += 1
+
         if shouldGoUpPWADDir:
           shouldGoUpPWADDir = false
           if customPWADDirectory.len > 0 and dirExists(customPWADDirectory.parentDir()) and customPWADDirectory.parentDir() != state.defaultPWADDirectory:
@@ -1412,15 +1557,44 @@ proc main() =
           else:
             customPWADDirectory = ""
           updateWADsLists()
+
         if shouldGoCustomPWADDir:
           shouldGoCustomPWADDir = false
           if customPWADDirectory.len <= 0 or not dirExists(customPWADDirectory):
             customPWADDirectory = ""
           updateWADsLists()
 
-        igEndChild()
+        if shouldOpenReadTXT:
+          try:
+            txtText = readTXT(txtPath)
+          except:
+            txtText = @[]
+          if txtText.len > 0:
+            showReadTXTModal = true
+            igOpenPopup("###Read TXT")
+          shouldOpenReadTXT = false
+
 
         style.selectableTextAlign = ImVec2(x: 0, y: 0.5f)
+
+#----------------------------------------------------
+#---------------- Read TXT popup begin --------------
+#----------------------------------------------------
+
+        igSetNextWindowSize(ImVec2(x: viewport.size.x, y: viewport.size.y), ImGuiCond.Appearing)
+        igSetNextWindowPos(windowCenter, ImGuiCond.Appearing, ImVec2(x: 0.5f, y: 0.5f))
+        if igBeginPopupModal(extractFilename(txtPath) & "###Read TXT", showReadTXTModal.addr, cast[ImGuiWindowFlags](ImGuiWindowFlags.NoResize.int or ImGuiWindowFlags.NoMove.int or ImGuiWindowFlags.HorizontalScrollbar.int)):
+          if igIsKeyPressed(256, false):          #for some reason nimgl bindings don't work, so 256 = Escape
+            showReadTXTModal = false
+          for line in txtText:
+            try:      #afaik it shouldn't crash when exceeding limit, but still
+              igText(" " & line)
+            except:
+              igText("")
+          igEndPopup()
+
+        igEndChild()
+
 #----------------------------------------------------
 
     igEnd()                         #right(main) window - end

@@ -57,6 +57,13 @@ type
     updateFound*: seq[string]
     relativePaths*: string
     relativePathsFAQ*: seq[string]
+    desktopIntegration*: string
+    desktopIntegrationFAQWIN*: string
+    desktopIntegrationFAQLIN*: string
+    extraPWADButtons*: string
+    extraPWADButtonsFAQ*: seq[string]
+    needToSelectFolders*: string
+
 
 var trans*: Translation
 
@@ -109,18 +116,24 @@ proc setLang*(lan: int = 0) =
         tips: @["Несколько советов:", "- ПКМ по выбранному порту для настройки", "", "- ПКМ по выбранному конфигу, чтобы сохранить,", "скопировать, переименовать или удалить его", "", "- можно менять порядок портов, конфигов и", "добавленных PWAD`ов путем перетаскивания с", "зажатой ЛКМ", "", "- добавленные PWAD`ы можно удалить, нажав ПКМ", "", "- ПКМ по элементу в списке PWAD`ов откроет", "соответствующий txt файл, при его наличии", "", "- для быстрого добавления порта вы можете", "перетащить исполняемый файл в левую часть окна", "", "- добавить внешний PWAD можно двумя способами:", "нажав на соответствующую кнопку или перетащив", "файл в правую часть окна", "", "- импортировать .zdl можно двумя способами:", "ПКМ по кнопке добавления конфигурации или", "перетащив файл в правую часть окна"],
         removeportWarning: @["Удалить выбранный порт и все его конфигурации?", "Вы уверены?"],
         removeconfigWarning: @["Удалить выбранную конфигурацию?", "Вы уверены?"],
-        addzdlconfig: "Добавить ZDL",
+        addzdlconfig: "Добавить .zdl",
         selectzdlconfig: "Выбрать ZDL конфиг",
         language: "Язык:",
         copy: "Скопировать",
         paste: "Вставить",
         importCFG: "Импортировать",
-        exportCFG: "Сохранить",
+        exportCFG: "Экспортировать",
         checkForUpdates: "Проверять обновления:",
         checkForUpdatesFAQ: @["Проверять обновления при запуске", "", "Уведомит, если доступна новая версия"],
         updateFound: @["Доступна новая версия!", "Хотите обновить?"],
         relativePaths: "Относительные пути:  ",
-        relativePathsFAQ: @["Сохранять пути относительно лаунчера", "", "Полезно, если лаунчер используется портативно", "", "Учитываются только пути ниже или наравне с", "расположением лаунчера"]
+        relativePathsFAQ: @["Сохранять пути относительно лаунчера", "", "Полезно, если лаунчер используется портативно", "", "Учитываются только пути ниже или наравне с", "расположением лаунчера"],
+        desktopIntegration: "Интеграция в систему:",
+        desktopIntegrationFAQWIN: "Создать .lnk файл, чтобы можно было запускать лаунчер из меню пуск",
+        desktopIntegrationFAQLIN: "Создать .desktop файл, чтобы можно было запускать лаунчер из меню пуск",
+        extraPWADButtons: "Доп. PWAD кнопки:    ",
+        extraPWADButtonsFAQ: @["Альтернативное управление добавленными PWAD`ами", "Кнопки: вверх, вниз, убрать, информация"],
+        needToSelectFolders: "Необходимо выбрать директории WAD`ов"
         )
     else:
       trans = Translation(
@@ -147,7 +160,7 @@ proc setLang*(lan: int = 0) =
         pwadsdirectoryHelper: "Select directory with PWADs",
         makeexecportable: "Launch as portable:",
         makeexecportableFAQ: "Use .home folder near executable",
-        closeonlaunch: "Close on launch:  ",
+        closeonlaunch: "Close on launch:     ",
         closeonlaunchFAQ: "Close this launcher when the port is running",
         about: "About",
         extracredits: "Extra credits:",
@@ -166,16 +179,22 @@ proc setLang*(lan: int = 0) =
         tips: @["Some tips:", "- right click selected port to configure it", "", "- right click selected config to export, copy,", "rename or delete it", "", "- ports, configs and selected PWADs can be", "rearranged by holding and dragging left mouse", "button", "", "- in the selected PWADs area press right mouse", "button to remove PWAD from the list", "", "- right click the element in PWADs list to", "open corresponding txt file if it is present", "", "- you can drag-n-drop executable into the", "left side of the main window", "", "- you can add extra PWAD that is not in the", "PWADs folder by either drag-n-dropping the file", "into the right side of the window or by pressing", "corresponding button", "", "- you can add .zdl config by either right click", "the add config button or by dragging", "the file into the right side of the window"],
         removeportWarning: @["Remove selected port and all related configs?", "Are you sure?"],
         removeconfigWarning: @["Remove selected config?", "Are you sure?"],
-        addzdlconfig: "Import ZDL",
+        addzdlconfig: "Import .zdl",
         selectzdlconfig: "Select ZDL config",
         language: "Language:",
         copy: "Copy",
         paste: "Paste",
         importCFG: "Import",
         exportCFG: "Export",
-        checkForUpdates: "Check for updates:",
+        checkForUpdates: "Check for updates:   ",
         checkForUpdatesFAQ: @["Check for updates on startup", "", "Will notify if there is newer version"],
         updateFound: @["New version available!", "Do you want to update?"],
-        relativePaths: "Relative paths:   ",
-        relativePathsFAQ: @["Save paths relative to the launcher", "", "Useful if the launcher is used portable", "", "Only paths that are lower or at the same", "level as the launcher will be used"]
+        relativePaths: "Relative paths:      ",
+        relativePathsFAQ: @["Save paths relative to the launcher", "", "Useful if the launcher is used portable", "", "Only paths that are lower or at the same", "level as the launcher will be used"],
+        desktopIntegration: "System integration:  ",
+        desktopIntegrationFAQWIN: "Create .lnk file so you can run the program from Start Menu",
+        desktopIntegrationFAQLIN: "Create .desktop file so you can run the program from Start Menu",
+        extraPWADButtons: "Extra PWAD buttons:  ",
+        extraPWADButtonsFAQ: @["Alternative controls for added PWADs", "Buttons: up, down, remove, info"],
+        needToSelectFolders: "You need to select WAD directories"
         )
